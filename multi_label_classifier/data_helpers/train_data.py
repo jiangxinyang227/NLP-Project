@@ -122,13 +122,13 @@ class TrainData(TrainDataBase):
         # 若vocab的长读小于设置的vocab_size，则选择vocab的长度作为真实的vocab_size
         self.vocab_size = len(vocab)
 
-        if self._word_vectors_path is None:
-            word_vectors = self.get_word_vectors(words)
+        if self._word_vectors_path:
+            word_vectors = self.get_word_vectors(vocab)
             self.word_vectors = word_vectors
             # 将本项目的词向量保存起来
             np.save(os.path.join(self._output_path, "word_vectors.npy"), self.word_vectors)
 
-        word_to_index = dict(zip(words, list(range(len(words)))))
+        word_to_index = dict(zip(vocab, list(range(len(vocab)))))
 
         # 将词汇-索引映射表保存为pkl数据，之后做inference时直接加载来处理数据
         with open(os.path.join(self._output_path, "word_to_index.pkl"), "wb") as f:

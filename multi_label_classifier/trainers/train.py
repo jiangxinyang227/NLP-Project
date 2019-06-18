@@ -31,7 +31,6 @@ class Trainer(TrainerBase):
         print("vocab size: {}".format(self.vocab_size))
         self.word_vectors = self.train_data_obj.word_vectors
         self.label_list = [value for key, value in label_to_idx.items()]
-        print(self.eval_data)
 
         self.eval_inputs, self.eval_labels = self.eval_data_obj.gen_data()
         print("eval data size: {}".format(len(self.eval_labels)))
@@ -86,8 +85,8 @@ class Trainer(TrainerBase):
             for epoch in range(self.config["epochs"]):
                 print("----- Epoch {}/{} -----".format(epoch + 1, self.config["epochs"]))
 
-                for batch in self.train_data.next_batch(self.train_inputs, self.train_labels,
-                                                        self.config["batch_size"]):
+                for batch in self.train_data_obj.next_batch(self.train_inputs, self.train_labels,
+                                                            self.config["batch_size"]):
                     summary, loss, predictions = self.model.train(sess, batch, self.config["keep_prob"])
 
                     # 将train参数加入到tensorboard中
@@ -101,7 +100,7 @@ class Trainer(TrainerBase):
                                                                                micro_f1, micro_prec, micro_rec))
 
                     current_step += 1
-                    if self.eval_data and current_step % self.config["checkpoint_every"] == 0:
+                    if self.eval_data_obj and current_step % self.config["checkpoint_every"] == 0:
 
                         eval_losses = []
                         eval_hamming_losses = []
@@ -111,8 +110,8 @@ class Trainer(TrainerBase):
                         eval_micro_f1s = []
                         eval_micro_precs = []
                         eval_micro_recs = []
-                        for eval_batch in self.eval_data.next_batch(self.eval_inputs, self.eval_labels,
-                                                                    self.config["batch_size"]):
+                        for eval_batch in self.eval_data_obj.next_batch(self.eval_inputs, self.eval_labels,
+                                                                        self.config["batch_size"]):
                             eval_summary, eval_loss, eval_predictions = self.model.eval(sess, eval_batch)
 
                             # 将eval参数加入到tensorboard中

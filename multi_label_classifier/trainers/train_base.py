@@ -4,7 +4,6 @@ class TrainerBase(object):
 
         self.model = None  # 模型的初始化对象
         self.config = None  # 模型的配置参数
-        self.current_step = 0
 
     def load_data(self):
         """
