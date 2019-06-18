@@ -1,0 +1,26 @@
+{
+  "model_name": "textcnn",
+  "epochs": 1,
+  "checkpoint_every": 100,
+  "eval_every": 100,
+  "learning_rate": 1e-3,
+  "optimization": "adam",
+  "embedding_size": 200,
+  "num_filters": 128,
+  "filter_sizes": [2, 3, 4, 5],
+  "sequence_length": 500,
+  "batch_size": 128,
+  "vocab_size": 10000,
+  "num_classes": 1,
+  "keep_prob": 0.5,
+  "l2_reg_lambda": 0.0,
+  "max_grad_norm": 5.0,
+  "train_data": "data/imdb/train_data.txt",
+  "eval_data": "data/imdb/eval_data.txt",
+  "stop_word": "data/english",
+  "output_path": "outputs/imdb/textcnn",
+  "word_vectors_path": null,
+  "ckpt_model_path": "ckpt_model/imdb/textcnn",
+  "pb_model_path": "pb_model/imdb/textcnn"
+}
+
