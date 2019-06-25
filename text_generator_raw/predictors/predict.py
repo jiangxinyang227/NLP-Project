@@ -1,12 +1,13 @@
 import os
 import pickle
 import sys
+
 sys.path.append(os.path.abspath(os.path.dirname(os.getcwd())))
 
 from bpemb import BPEmb
 import tensorflow as tf
 from predict_base import PredictorBase
-from models import Seq2SeqLstmModel, Seq2SeqBiLstmModel
+from models import Seq2SeqBiLstmModel, Seq2SeqTransformer
 
 
 class Predictor(PredictorBase):
@@ -51,7 +52,7 @@ class Predictor(PredictorBase):
 
         if self.config["use_bpe"]:
             word_idx = self.bpe_zh.encode_ids(sentence)
-            word_idx = list(map(lambda x: x+1, word_idx))
+            word_idx = list(map(lambda x: x + 1, word_idx))
         else:
             word_idx = [self.word_to_idx.get(token, self.word_to_idx["UNK"]) for token in sentence]
 
@@ -65,16 +66,15 @@ class Predictor(PredictorBase):
         :param sentence:
         :return:
         """
-        questions = [sentence]
-        question_length = [len(sentence)]
-        return dict(questions=questions, question_length=question_length)
+        encoder_inputs = [sentence]
+        return dict(encoder_inputs=encoder_inputs)
 
     def response(self, tokens_list):
         sents = []
         for i in range(self.config["beam_size"]):
             sent_token = tokens_list[:, i]
             if self.config["use_bpe"]:
-                sent = self.bpe_zh.decode_ids(list(map(lambda x: x-1, sent_token)))
+                sent = self.bpe_zh.decode_ids(list(map(lambda x: x - 1, sent_token)))
             else:
                 sent = "".join([self.idx_to_label[token] for token in sent_token])
             sents.append(sent)
@@ -87,12 +87,12 @@ class Predictor(PredictorBase):
         :return:
         """
         if self.config["model_name"] == "seq2seq_lstm":
-            self.model = Seq2SeqLstmModel(config=self.config, vocab_size=len(self.word_to_idx),
-                                          word_vectors=None, mode="decode")
+            self.model = Seq2SeqTransformer(config=self.config, vocab_size=len(self.word_to_idx),
+                                            word_vectors=None)
 
         if self.config["model_name"] == "seq2seq_bilstm":
             self.model = Seq2SeqBiLstmModel(config=self.config, vocab_size=len(self.word_to_idx),
-                                            word_vectors=None, mode="decode")
+                                            word_vectors=None)
 
     def load_graph(self):
         """
@@ -129,8 +129,8 @@ class Predictor(PredictorBase):
         :return:
         """
         sentence_ids = self.sentence_to_encode(sentence)
-        prediction = self.model.infer(self.sess, sentence_ids).reshape(-1, self.config["beam_size"])
+        prediction_ = self.model.infer(sentence_ids["encoder_inputs"])
+        prediction = self.sess.run(prediction_)
         print(prediction.shape)
         response = self.response(prediction)
         return response
-
