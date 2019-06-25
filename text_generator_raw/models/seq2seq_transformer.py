@@ -4,21 +4,21 @@ import numpy as np
 import tensorflow as tf
 
 
-class Seq2SeqTransformer():
-    def __init__(self, config):
-        self.epsilon = config["lr_epsilon"]
-        self.vocab_size = config["vocab_size"]
+class Seq2SeqTransformer(object):
+    def __init__(self, config, vocab_size, word_vectors=None):
+        self.vocab_size = vocab_size
+        self.word_vectors = word_vectors  # 词向量得到的词嵌入矩阵
         self.embedding_size = config["embedding_size"]
-        self.num_heads = config["num_heads"]
-        self.num_blocks = config["num_blocks"]
+        self.num_heads = config["num_heads"]  # multi head 的头数
+        self.num_blocks = config["num_blocks"]  # transformer block的数量
         self.batch_size = config["batch_size"]
-        self.sequence_length = config["sequence_length"]
-        self.keep_prob = config["keep_prob"]
-        self.hidden_size = config["hidden_size"]
-        self.learning_rate = config["learning_rate"]
-        self.smooth_rate = config["smooth_rate"]
-        self.warmup_step = config["warmup_step"]
-        self.decode_step = config["decode_step"]
+        self.dropout_rate = config["dropout_rate"]
+        self.hidden_size = config["hidden_size"]  # feed forward层的隐层大小
+        self.learning_rate = config["learning_rate"]  # 学习速率
+        self.epsilon = config["lr_epsilon"]  # layer normalization 中除数中的极小值
+        self.smooth_rate = config["smooth_rate"]  # smooth label的比例
+        self.warmup_step = config["warmup_step"]  # 学习速率预热的步数
+        self.decode_step = config["decode_step"]  # 解码的最大长度
 
         # 编码和解码共享embedding矩阵，若是不同语言的，如机器翻译，就各定义一个embedding矩阵
         self.embedding_matrix = self._get_embedding_matrix()
@@ -26,10 +26,11 @@ class Seq2SeqTransformer():
         self.pad_token = 0
         self.start_token = 2
 
-    def encode(self, encoder_inputs):
+    def encode(self, encoder_inputs, training=True):
         """
         定义decode部分
         :param encoder_inputs:
+        :param training:
         :return:
         """
         with tf.name_scope("encoder"):
@@ -37,7 +38,7 @@ class Seq2SeqTransformer():
             embedded_word = tf.nn.embedding_lookup(self.embedding_matrix, encoder_inputs)
 
             embedded_word += self._position_embedding(encoder_inputs)
-            embedded_word = tf.nn.dropout(embedded_word, self.keep_prob)
+            embedded_word = tf.layers.dropout(embedded_word, self.dropout_rate, training=training)
 
             # transformer结构
             for i in range(self.num_blocks):
@@ -47,18 +48,20 @@ class Seq2SeqTransformer():
                         multihead_atten = self._multihead_attention(raw_queries=encoder_inputs,
                                                                     raw_keys=encoder_inputs,
                                                                     queries=embedded_word,
-                                                                    keys=embedded_word)
+                                                                    keys=embedded_word,
+                                                                    training=training)
                     # feed forward 层
                     with tf.name_scope("feed_forward"):
                         embedded_word = self._feed_forward(multihead_atten)
         return embedded_word
 
-    def decode(self, encoder_inputs, decoder_inputs, encoder_outputs):
+    def decode(self, encoder_inputs, decoder_inputs, encoder_outputs, training=True):
         """
         decode部分
         :param encoder_inputs:
         :param decoder_inputs:
         :param encoder_outputs:
+        :param training:
         :return:
         """
         with tf.name_scope("decoder"):
@@ -66,7 +69,7 @@ class Seq2SeqTransformer():
             embedded_word = tf.nn.embedding_lookup(self.embedding_matrix, decoder_inputs)
 
             embedded_word += self._position_embedding(decoder_inputs)
-            embedded_word = tf.nn.dropout(embedded_word, self.keep_prob)
+            embedded_word = tf.layers.dropout(embedded_word, self.dropout_rate, training=training)
 
             for i in range(self.num_blocks):
                 with tf.name_scope("transformer_{}".format(i)):
@@ -76,7 +79,8 @@ class Seq2SeqTransformer():
                                                                     raw_keys=decoder_inputs,
                                                                     queries=embedded_word,
                                                                     keys=embedded_word,
-                                                                    causality=True)
+                                                                    causality=True,
+                                                                    training=training)
 
                     # Vanilla attention 层
                     with tf.name_scope("vanilla_attention"):
@@ -84,7 +88,8 @@ class Seq2SeqTransformer():
                                                                   raw_keys=encoder_inputs,
                                                                   queries=multihead_atten,
                                                                   keys=encoder_outputs,
-                                                                  causality=False)
+                                                                  causality=False,
+                                                                  training=training)
                     # Feed Forward 层
                     with tf.name_scope("feed_forward"):
                         embedded_word = self._feed_forward(vanilla_atten)
@@ -95,87 +100,6 @@ class Seq2SeqTransformer():
         y_pred = tf.to_int32(tf.argmax(logits, axis=-1))
 
         return logits, y_pred
-
-    def train(self, encoder_inputs, decoder_inputs, y_true):
-        """
-        预测模型
-        :param encoder_inputs:
-        :param decoder_inputs:
-        :param y_true:
-        :return:
-        """
-        # forward
-        encoder_outputs = self.encode(encoder_inputs)
-        logits, y_pred = self.decode(encoder_inputs, decoder_inputs, encoder_outputs)
-
-        # train scheme
-        # 对真实的标签做平滑处理
-        y_ = self.label_smoothing(tf.one_hot(y_true, depth=self.vocab_size))
-        losses = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=y_)
-        # 取出非0部分，即非padding部分
-        non_padding = tf.to_float(tf.not_equal(y_true, self.pad_token))
-        loss = tf.reduce_sum(losses * non_padding) / (tf.reduce_sum(non_padding) + 1e-7)
-
-        global_step = tf.train.get_or_create_global_step()
-        # 动态的修改初始的学习速率
-        lr = self.noam_scheme(self.learning_rate, global_step, self.warmup_step)
-        optimizer = tf.train.AdamOptimizer(lr)
-        train_op = optimizer.minimize(loss, global_step=global_step)
-
-        tf.summary.scalar('lr', lr)
-        tf.summary.scalar("loss", loss)
-        tf.summary.scalar("global_step", global_step)
-
-        summaries = tf.summary.merge_all()
-
-        return loss, train_op, global_step, summaries
-
-    def eval(self, encoder_inputs, decoder_inputs, y_true):
-        """
-        验证模型
-        :param encoder_inputs:
-        :param decoder_inputs:
-        :param y_true:
-        :return:
-        """
-        # forward
-        encoder_outputs = self.encode(encoder_inputs)
-        logits, y_pred = self.decode(encoder_inputs, decoder_inputs, encoder_outputs)
-
-        # train scheme
-        # 对真实的标签做平滑处理
-        y_ = self.label_smoothing(tf.one_hot(y_true, depth=self.vocab_size))
-        losses = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=y_)
-        # 取出非0部分，即非padding部分
-        non_padding = tf.to_float(tf.not_equal(y_true, self.pad_token))
-        loss = tf.reduce_sum(losses * non_padding) / (tf.reduce_sum(non_padding) + 1e-7)
-
-        tf.summary.scalar("loss", loss)
-
-        summaries = tf.summary.merge_all()
-
-        return loss, summaries
-
-    def infer(self, encoder_inputs):
-        """
-        预测部分
-        :param encoder_inputs:
-        :return:
-        """
-
-        # 在验证时，没有真实的decoder_inputs，此时需要构造一个初始的输入，初始的输入用初始符
-        decoder_inputs = tf.ones((tf.shape(encoder_inputs)[0], 1), tf.int32) * self.start_token
-
-        encoder_outputs = self.encode(encoder_inputs)
-
-        logging.info("Inference graph is being built. Please be patient.")
-        for _ in tqdm(range(self.decode_step)):
-            logits, y_pred = self.decode(encoder_inputs, decoder_inputs, encoder_outputs)
-            if tf.reduce_sum(y_pred, 1) == self.pad_token: break
-
-            decoder_inputs = tf.concat((decoder_inputs, y_pred), 1)
-
-        return y_pred
 
     def _get_embedding_matrix(self, zero_pad=True):
         """
@@ -199,14 +123,15 @@ class Seq2SeqTransformer():
         生成位置向量
         :return:
         """
+        sequence_length = tf.shape(inputs)[1]
         with tf.variable_scope("position_embedding", reuse=tf.AUTO_REUSE):
             # 生成位置的索引，并扩张到batch中所有的样本上
-            position_index = tf.tile(tf.expand_dims(tf.range(self.sequence_length), 0), [self.batch_size, 1])
+            position_index = tf.tile(tf.expand_dims(tf.range(sequence_length), 0), [self.batch_size, 1])
 
             # 根据正弦和余弦函数来获得每个位置上的embedding的第一部分
             position_embedding = np.array([[pos / np.power(10000, (i - i % 2) / self.embedding_size)
                                             for i in range(self.embedding_size)]
-                                           for pos in range(self.sequence_length)])
+                                           for pos in range(sequence_length)])
 
             # 然后根据奇偶性分别用sin和cos函数来包装
             position_embedding[:, 0::2] = np.sin(position_embedding[:, 0::2])
@@ -242,7 +167,8 @@ class Seq2SeqTransformer():
 
         return outputs
 
-    def _multihead_attention(self, raw_queries, raw_keys, queries, keys, causality=False, num_units=None):
+    def _multihead_attention(self, raw_queries, raw_keys, queries, keys, causality=False,
+                             num_units=None, training=True):
         """
         计算多头注意力
         :param raw_queries: 原始quers，用于计算mask
@@ -250,6 +176,7 @@ class Seq2SeqTransformer():
         :param queries: 添加了位置向量的词向量
         :param keys: 添加了位置向量的词向量
         :param num_units: 计算多头注意力后的向量长度，如果为None，则取embedding_size
+        :param training:
         :return:
         """
         if num_units is None:  # 若是没传入值，直接去输入数据的最后一维，即embedding size.
@@ -331,7 +258,7 @@ class Seq2SeqTransformer():
         # 将多头Attention计算的得到的输出重组成最初的维度[batch_size, sequence_length, embedding_size]
         outputs = tf.concat(tf.split(outputs, self.num_heads, axis=0), axis=2)
 
-        outputs = tf.nn.dropout(outputs, keep_prob=self.keep_prob)
+        outputs = tf.layers.dropout(outputs, self.dropout_rate, training=training)
 
         # 对每个subLayers建立残差连接，即H(x) = F(x) + x
         outputs += queries
@@ -381,5 +308,86 @@ class Seq2SeqTransformer():
         step = tf.cast(global_step + 1, dtype=tf.float32)
         return init_lr * warmup_steps ** 0.5 * tf.minimum(step * warmup_steps ** -1.5, step ** -0.5)
 
+    def train(self, encoder_inputs, decoder_inputs, y_true, training=True):
+        """
+        预测模型
+        :param encoder_inputs:
+        :param decoder_inputs:
+        :param y_true:
+        :param training:
+        :return:
+        """
+        # forward
+        encoder_outputs = self.encode(encoder_inputs, training=training)
+        logits, y_pred = self.decode(encoder_inputs, decoder_inputs, encoder_outputs, training=training)
 
+        # train scheme
+        # 对真实的标签做平滑处理
+        y_ = self.label_smoothing(tf.one_hot(y_true, depth=self.vocab_size))
+        losses = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=y_)
+        # 取出非0部分，即非padding部分
+        non_padding = tf.to_float(tf.not_equal(y_true, self.pad_token))
+        loss = tf.reduce_sum(losses * non_padding) / (tf.reduce_sum(non_padding) + 1e-7)
+
+        global_step = tf.train.get_or_create_global_step()
+        # 动态的修改初始的学习速率
+        lr = self.noam_scheme(self.learning_rate, global_step, self.warmup_step)
+        optimizer = tf.train.AdamOptimizer(lr)
+        train_op = optimizer.minimize(loss, global_step=global_step)
+
+        tf.summary.scalar('lr', lr)
+        tf.summary.scalar("loss", loss)
+        tf.summary.scalar("global_step", global_step)
+
+        summaries = tf.summary.merge_all()
+
+        return loss, train_op, global_step, summaries
+
+    def eval(self, encoder_inputs, decoder_inputs, y_true, training=False):
+        """
+        验证模型
+        :param encoder_inputs:
+        :param decoder_inputs:
+        :param y_true:
+        :param training:
+        :return:
+        """
+        # forward
+        encoder_outputs = self.encode(encoder_inputs, training=training)
+        logits, y_pred = self.decode(encoder_inputs, decoder_inputs, encoder_outputs, training=training)
+
+        # train scheme
+        # 对真实的标签做平滑处理
+        y_ = self.label_smoothing(tf.one_hot(y_true, depth=self.vocab_size))
+        losses = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=y_)
+        # 取出非0部分，即非padding部分
+        non_padding = tf.to_float(tf.not_equal(y_true, self.pad_token))
+        loss = tf.reduce_sum(losses * non_padding) / (tf.reduce_sum(non_padding) + 1e-7)
+
+        tf.summary.scalar("loss", loss)
+
+        summaries = tf.summary.merge_all()
+
+        return loss, summaries
+
+    def infer(self, encoder_inputs):
+        """
+        预测部分
+        :param encoder_inputs:
+        :return:
+        """
+
+        # 在验证时，没有真实的decoder_inputs，此时需要构造一个初始的输入，初始的输入用初始符
+        decoder_inputs = tf.ones((tf.shape(encoder_inputs)[0], 1), tf.int32) * self.start_token
+
+        encoder_outputs = self.encode(encoder_inputs)
+
+        logging.info("Inference graph is being built. Please be patient.")
+        for _ in tqdm(range(self.decode_step)):
+            logits, y_pred = self.decode(encoder_inputs, decoder_inputs, encoder_outputs)
+            if tf.reduce_sum(y_pred, 1) == self.pad_token: break
+
+            decoder_inputs = tf.concat((decoder_inputs, y_pred), 1)
+
+        return y_pred
 
