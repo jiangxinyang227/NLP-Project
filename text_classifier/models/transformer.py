@@ -94,14 +94,13 @@ class TransformerModel(BaseModel):
 
         return outputs
 
-    def _multihead_attention(self, inputs, queries, keys, num_units=None, causality=False):
+    def _multihead_attention(self, inputs, queries, keys, num_units=None):
         """
         计算多头注意力
         :param inputs: 原始输入，用于计算mask
         :param queries: 添加了位置向量的词向量
         :param keys: 添加了位置向量的词向量
         :param num_units: 计算多头注意力后的向量长度，如果为None，则取embedding_size
-        :param causality:
         :return:
         """
         num_heads = self.config["num_heads"]  # multi head 的头数
@@ -126,33 +125,45 @@ class TransformerModel(BaseModel):
         similarity = tf.matmul(Q_, tf.transpose(K_, [0, 2, 1]))
 
         # 对计算的点积进行缩放处理，除以向量长度的根号值
-        scaled_similarity = similarity / (K_.get_shape().as_list()[-1] ** 0.5)
+        similarity = similarity / (K_.get_shape().as_list()[-1] ** 0.5)
 
         # 在我们输入的序列中会存在padding这个样的填充词，这种词应该对最终的结果是毫无帮助的，原则上说当padding都是输入0时，
         # 计算出来的权重应该也是0，但是在transformer中引入了位置向量，当和位置向量相加之后，其值就不为0了，因此在添加位置向量
-        # 之前，我们需要将其mask为0。虽然在queries中也存在这样的填充词，但原则上模型的结果之和输入有关，而且在self-Attention中
-        # queryies = keys，因此只要一方为0，计算出的权重就为0。
+        # 之前，我们需要将其mask为0。在这里我们不仅要对keys做mask，还要对querys做mask
         # 具体关于key mask的介绍可以看看这里： https://github.com/Kyubyong/transformer/issues/3
 
         # 利用tf，tile进行张量扩张， 维度[batch_size * numHeads, keys_len] keys_len = keys 的序列长度
-        key_masks = tf.tile(inputs, [num_heads, 1])
+        mask = tf.tile(inputs, [num_heads, 1])
 
         # 增加一个维度，并进行扩张，得到维度[batch_size * numHeads, queries_len, keys_len]
-        key_masks = tf.tile(tf.expand_dims(key_masks, 1), [1, tf.shape(queries)[1], 1])
+        key_masks = tf.tile(tf.expand_dims(mask, 1), [1, tf.shape(queries)[1], 1])
 
-        # tf.ones_like生成元素全为1，维度和scaledSimilary相同的tensor, 然后得到负无穷大的值
-        paddings = tf.ones_like(scaled_similarity) * (-2 ** (32 + 1))
+        # tf.ones_like生成元素全为1，维度和similarity相同的tensor, 然后得到负无穷大的值
+        paddings = tf.ones_like(similarity) * (-2 ** 32 + 1)
 
         # tf.where(condition, x, y),condition中的元素为bool值，其中对应的True用x中的元素替换，对应的False用y中的元素替换
         # 因此condition,x,y的维度是一样的。下面就是keyMasks中的值为0就用paddings中的值替换
         masked_similarity = tf.where(tf.equal(key_masks, 0), paddings,
-                                     scaled_similarity)  # 维度[batch_size * numHeads, queries_len, key_len]
+                                     similarity)  # 维度[batch_size * numHeads, queries_len, key_len]
 
         # 通过softmax计算权重系数，维度 [batch_size * numHeads, queries_len, keys_len]
         weights = tf.nn.softmax(masked_similarity)
 
+        # 因为key和query是相同的输入，当存在padding时，计算出来的相似度矩阵应该是行和列都存在mask的部分，上面的key_masks是
+        # 对相似度矩阵中的列mask，mask完之后，还要对行做mask，列mask时用负无穷来使得softmax（在这里的softmax是对行来做的）
+        # 计算出来的非mask部分的值相加还是为1，行mask就直接去掉就行了，以上的分析均针对batch_size等于1.
+        """
+        mask的相似度矩阵：[[0.5, 0.5, 0], [0.5, 0.5, 0], [0, 0, 0]]
+        初始的相似度矩阵:[[1, 1, 1], [1, 1, 1], [1, 1, 1]]
+        一，key_masks + 行softmax：[[0.5, 0.5, 0], [0.5, 0.5, 0], [0.5, 0.5, 0]]
+        二，query_masks后：[[0.5, 0.5, 0], [0.5, 0.5, 0], [0, 0, 0]]
+        """
+        query_masks = tf.tile(tf.expand_dims(mask, -1), [1, 1, tf.shape(keys)[1]])
+        mask_weights = tf.where(tf.equal(query_masks, 0), paddings,
+                                weights)  # 维度[batch_size * numHeads, queries_len, key_len]
+
         # 加权和得到输出值, 维度[batch_size * numHeads, sequence_length, embedding_size/numHeads]
-        outputs = tf.matmul(weights, V_)
+        outputs = tf.matmul(mask_weights, V_)
 
         # 将多头Attention计算的得到的输出重组成最初的维度[batch_size, sequence_length, embedding_size]
         outputs = tf.concat(tf.split(outputs, num_heads, axis=0), axis=2)
@@ -209,7 +220,7 @@ class TransformerModel(BaseModel):
         # 根据正弦和余弦函数来获得每个位置上的embedding的第一部分
         position_embedding = np.array([[pos / np.power(10000, (i - i % 2) / embedding_size)
                                         for i in range(embedding_size)]
-                                      for pos in range(sequence_length)])
+                                       for pos in range(sequence_length)])
 
         # 然后根据奇偶性分别用sin和cos函数来包装
         position_embedding[:, 0::2] = np.sin(position_embedding[:, 0::2])
@@ -222,4 +233,3 @@ class TransformerModel(BaseModel):
         embedded_position = tf.nn.embedding_lookup(position_embedding, position_index)
 
         return embedded_position
-
