@@ -14,6 +14,7 @@ class EvalData(EvalPredictDataBase):
                                          config["output_path"])
 
         self.pad_token = 0
+        self.go_token = 2
         self.eos_token = 3
 
     def read_data(self):
@@ -67,21 +68,31 @@ class EvalData(EvalPredictDataBase):
         :param batch:
         :return:
         """
-        question_length = [len(sample[0]) for sample in batch]
+        # 对question添加结束符
+        questions = [[sample[0] + [self.eos_token]] for sample in batch]
+        question_length = [len(question) for question in questions]
         max_question_length = max(question_length)
-        questions = [sample[0] + [self.pad_token] * (max_question_length - len(sample[0]))
-                     for sample in batch]
+        encoder_inputs = [question + [self.pad_token] * (max_question_length - len(question))
+                          for question in questions]
 
-        # 在这里先对response加上一个终止符<eos>
-        responses = [sample[1] + [self.eos_token] for sample in batch]
-        response_length = [len(response) for response in responses]
-        max_response_length = max(response_length)
+        # 在这里先对response加上一个开始符和结束符<eos>
+        responses = [[self.go_token] + sample[1] + [self.eos_token] for sample in batch]
+        decoder_inputs = [response[:-1] for response in responses]
+        decoder_outputs = [response[1:] for response in responses]
 
-        # 对response按最大长度补齐
-        pad_responses = [response + [self.pad_token] * (max_response_length - len(response)) for response in responses]
+        decoder_inputs_length = [len(response) for response in decoder_inputs]
+        max_decoder_inputs_length = max(decoder_inputs_length)
 
-        return dict(questions=questions, responses=pad_responses,
-                    question_length=question_length, response_length=response_length)
+        decoder_outputs_length = [len(response) for response in decoder_outputs]
+        max_decoder_outputs_length = max(decoder_outputs_length)
+
+        # 按最大长度补齐
+        decoder_inputs = [response + [self.pad_token] * (max_decoder_inputs_length - len(response))
+                          for response in decoder_inputs]
+        decoder_outputs = [response + [self.pad_token] * (max_decoder_outputs_length - len(response))
+                           for response in decoder_outputs]
+
+        return dict(encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs, decoder_outputs=decoder_outputs)
 
     def gen_data(self):
         """
