@@ -1,4 +1,3 @@
-from tqdm import tqdm
 import numpy as np
 import tensorflow as tf
 
@@ -137,30 +136,49 @@ class Seq2SeqTransformer(object):
         :return:
         """
         with tf.variable_scope("position_embedding", reuse=tf.AUTO_REUSE):
-            # 生成位置的索引，并扩张到batch中所有的样本上
-            position_index = tf.tile(tf.expand_dims(tf.range(max_len), 0), [self.batch_size, 1])
+            # # 生成位置的索引，并扩张到batch中所有的样本上
+            # position_index = tf.tile(tf.expand_dims(tf.range(max_len), 0), [self.batch_size, 1])
+            #
+            # # 根据正弦和余弦函数来获得每个位置上的embedding的第一部分
+            # position_embedding = np.array([[pos / np.power(10000, (i - i % 2) / self.embedding_size)
+            #                                 for i in range(self.embedding_size)]
+            #                                for pos in range(max_len)])
+            #
+            # # 然后根据奇偶性分别用sin和cos函数来包装
+            # position_embedding[:, 0::2] = np.sin(position_embedding[:, 0::2])
+            # position_embedding[:, 1::2] = np.cos(position_embedding[:, 1::2])
+            #
+            # # 将positionEmbedding转换成tensor的格式
+            # position_embedding = tf.cast(position_embedding, dtype=tf.float32)
+            #
+            # # 得到三维的矩阵[batchSize, sequenceLen, embeddingSize]
+            # embedded_position = tf.nn.embedding_lookup(position_embedding, position_index)
+            #
+            # # 对位置向量按照输入的一样，对padding部分对应的位置向量用0代替，这样方便在之后计算attention
+            #
+            # if masking:
+            #     embedded_position = tf.where(tf.equal(inputs, 0), inputs, embedded_position)
+            #
+            # return embedded_position
+            # [embedding_size, seq_len]
+            pos = tf.cast(tf.tile(tf.expand_dims(tf.range(max_len), axis=0), multiples=[self.embedding_size, 1]), tf.float32)
+            # [embedding_size, seq_len]
+            i = tf.cast(tf.tile(tf.expand_dims(tf.range(self.embedding_size), axis=1), multiples=[1, max_len]), tf.float32)
 
-            # 根据正弦和余弦函数来获得每个位置上的embedding的第一部分
-            position_embedding = np.array([[pos / np.power(10000, (i - i % 2) / self.embedding_size)
-                                            for i in range(self.embedding_size)]
-                                           for pos in range(max_len)])
+            # 定义正弦和余弦函数
+            sine = tf.sin(tf.divide(pos, tf.pow(float(10 ** 4), tf.divide(i, self.embedding_size))))  # [E, T]
+            cosine = tf.cos(tf.divide(pos, tf.pow(float(10 ** 4), tf.divide(i, self.embedding_size))))  # [E, T]
+            cosine = tf.manip.roll(cosine, shift=1, axis=0)
 
-            # 然后根据奇偶性分别用sin和cos函数来包装
-            position_embedding[:, 0::2] = np.sin(position_embedding[:, 0::2])
-            position_embedding[:, 1::2] = np.cos(position_embedding[:, 1::2])
+            # 生成正弦和余弦的分段函数
+            even_mask = tf.equal(tf.mod(tf.range(self.embedding_size), 2), 0)  # [embedding_size]
+            joint_pos = tf.where(condition=even_mask, x=sine, y=cosine)  # [embedding_size, seq_len]
+            joint_pos = tf.transpose(joint_pos)  # [seq_len, embedding_size]
 
-            # 将positionEmbedding转换成tensor的格式
-            position_embedding = tf.cast(position_embedding, dtype=tf.float32)
+            # 添加位置向量 [batch_size, seq_len, embedding_size]
+            embedding = tf.add(inputs, joint_pos, name="composed_embedding")
 
-            # 得到三维的矩阵[batchSize, sequenceLen, embeddingSize]
-            embedded_position = tf.nn.embedding_lookup(position_embedding, position_index)
-
-            # 对位置向量按照输入的一样，对padding部分对应的位置向量用0代替，这样方便在之后计算attention
-
-            if masking:
-                embedded_position = tf.where(tf.equal(inputs, 0), inputs, embedded_position)
-
-            return embedded_position
+            return embedding
 
     def _layer_normalization(self, inputs):
         """
