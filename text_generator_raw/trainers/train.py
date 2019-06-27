@@ -127,7 +127,7 @@ class Trainer(TrainerBase):
                     # 将train参数加入到tensorboard中
                     # train_summary_writer.add_summary(summary, global_step)
 
-                    if current_step % 1000 == 0:
+                    if current_step % 100 == 0:
                         perplexity = math.exp(float(loss)) if loss < 300 else float("inf")
                         print("train: step: {}, loss: {}, perplexity: {}".format(current_step, loss, perplexity))
                     current_step += 1
