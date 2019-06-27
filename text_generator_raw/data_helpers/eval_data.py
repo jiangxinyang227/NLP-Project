@@ -69,7 +69,7 @@ class EvalData(EvalPredictDataBase):
         :return:
         """
         # 对question添加结束符
-        questions = [[sample[0] + [self.eos_token]] for sample in batch]
+        questions = [sample[0] + [self.eos_token] for sample in batch]
         question_length = [len(question) for question in questions]
         max_question_length = max(question_length)
         encoder_inputs = [question + [self.pad_token] * (max_question_length - len(question))
@@ -92,7 +92,8 @@ class EvalData(EvalPredictDataBase):
         decoder_outputs = [response + [self.pad_token] * (max_decoder_outputs_length - len(response))
                            for response in decoder_outputs]
 
-        return dict(encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs, decoder_outputs=decoder_outputs)
+        return dict(encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs, decoder_outputs=decoder_outputs,
+                    encoder_max_len=max_question_length, decoder_max_len=max_decoder_inputs_length)
 
     def gen_data(self):
         """

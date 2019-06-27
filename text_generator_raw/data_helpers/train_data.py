@@ -4,6 +4,7 @@ import random
 from collections import Counter
 import gensim
 import numpy as np
+from itertools import chain
 
 from .data_base import TrainDataBase
 
@@ -85,8 +86,7 @@ class TrainData(TrainDataBase):
 
             return word_to_index
 
-        all_words = [word for word in questions] + [word for word in responses]
-
+        all_words = list(chain(*questions)) + list(chain(*responses))
         word_count = Counter(all_words)  # 统计词频
         sort_word_count = sorted(word_count.items(), key=lambda x: x[1], reverse=True)
         words = ["<PAD>", "<UNK>", "<GO>", "<EOS>"] + [item[0] for item in sort_word_count]
@@ -118,15 +118,7 @@ class TrainData(TrainDataBase):
         :param word_to_index: 词汇-索引映射表
         :return:
         """
-        data_idx = []
-        for sentence in data:
-            sentence_idx = []
-            for word in sentence:
-                if word in word_to_index:
-                    sentence_idx.append(word_to_index[word])
-                else:
-                    sentence_idx.append(word_to_index["<UNK>"])
-            data_idx.append(sentence_idx)
+        data_idx = [[word_to_index.get(word, word_to_index["<UNK>"]) for word in sentence] for sentence in data]
 
         return data_idx
 
@@ -137,7 +129,7 @@ class TrainData(TrainDataBase):
         :return:
         """
         # 对question添加结束符
-        questions = [[sample[0] + [self.eos_token]] for sample in batch]
+        questions = [sample[0] + [self.eos_token] for sample in batch]
         question_length = [len(question) for question in questions]
         max_question_length = max(question_length)
         encoder_inputs = [question + [self.pad_token] * (max_question_length - len(question))
@@ -160,7 +152,8 @@ class TrainData(TrainDataBase):
         decoder_outputs = [response + [self.pad_token] * (max_decoder_outputs_length - len(response))
                            for response in decoder_outputs]
 
-        return dict(encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs, decoder_outputs=decoder_outputs)
+        return dict(encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs, decoder_outputs=decoder_outputs,
+                    encoder_max_len=max_question_length, decoder_max_len=max_decoder_inputs_length)
 
     def gen_data(self):
         """
