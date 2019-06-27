@@ -1,4 +1,3 @@
-import numpy as np
 import tensorflow as tf
 
 
@@ -35,6 +34,7 @@ class Seq2SeqTransformer(object):
         self.decoder_max_len = tf.placeholder(tf.int32, None)
 
         self.built_model()
+        self.saver = tf.train.Saver(tf.global_variables())
 
     def encode(self, encoder_inputs, encoder_max_len, training=True):
         """
