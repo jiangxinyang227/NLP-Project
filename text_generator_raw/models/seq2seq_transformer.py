@@ -28,11 +28,11 @@ class Seq2SeqTransformer(object):
         self.start_token = 2
 
         # placeholder 值
-        self.encoder_inputs = tf.placeholder([self.batch_size, None], dtype=tf.int32)
-        self.decoder_inputs = tf.placeholder([self.batch_size, None], dtype=tf.int32)
-        self.decoder_outputs = tf.placeholder([self.batch_size, None], dtype=tf.int32)
-        self.encoder_max_len = tf.placeholder(None, tf.int32)
-        self.decoder_max_len = tf.placeholder(None, tf.int32)
+        self.encoder_inputs = tf.placeholder(tf.int32, [self.batch_size, None])
+        self.decoder_inputs = tf.placeholder(tf.int32, [self.batch_size, None])
+        self.decoder_outputs = tf.placeholder(tf.int32, [self.batch_size, None])
+        self.encoder_max_len = tf.placeholder(tf.int32, None)
+        self.decoder_max_len = tf.placeholder(tf.int32, None)
 
         self.built_model()
 
