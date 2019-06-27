@@ -127,8 +127,9 @@ class Trainer(TrainerBase):
                     # 将train参数加入到tensorboard中
                     # train_summary_writer.add_summary(summary, global_step)
 
-                    perplexity = math.exp(float(loss)) if loss < 300 else float("inf")
-                    print("train: step: {}, loss: {}, perplexity: {}".format(current_step, loss, perplexity))
+                    if current_step % 1000 == 0:
+                        perplexity = math.exp(float(loss)) if loss < 300 else float("inf")
+                        print("train: step: {}, loss: {}, perplexity: {}".format(current_step, loss, perplexity))
                     current_step += 1
 
                     if current_step % self.config["checkpoint_every"] == 0:
@@ -137,8 +138,7 @@ class Trainer(TrainerBase):
                             eval_perplexities = []
                             for eval_batch in self.eval_data_obj.next_batch(self.eval_data,
                                                                             self.config["batch_size"]):
-                                eval_loss_, eval_summary_ = self.model.eval(sess, eval_batch)
-                                eval_loss, eval_summary = sess.run([eval_loss_, eval_summary_])
+                                eval_loss, eval_pred = self.model.eval(sess, eval_batch)
                                 # 将eval参数加入到tensorboard中
                                 # eval_summary_writer.add_summary(eval_summary, global_step)
 
