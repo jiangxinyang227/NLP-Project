@@ -2,7 +2,7 @@
   "model_name": "seq2seq_transformer",
   "epochs": 10000,
   "checkpoint_every": 10000,
-  "eval_every": 100,
+  "eval_every": 10000,
   "learning_rate": 1e-3,
   "optimization": "adam",
   "embedding_size": 256,

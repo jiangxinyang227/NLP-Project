@@ -1,5 +1,5 @@
 {
-  "model_name": "seq2seq_transformer",
+  "model_name": "seq2seq_conv",
   "epochs": 16,
   "checkpoint_every": 10000,
   "eval_every": 10000,
@@ -24,8 +24,8 @@
   "max_grad_norm": 5.0,
   "train_data": "data/weibo/post_single_response_train.txt",
   "eval_data": "data/weibo/post_single_response_eval.txt",
-  "output_path": "outputs/weibo/post_single_response/transformer",
+  "output_path": "outputs/weibo/post_single_response/conv",
   "word_vectors_path": null,
-  "ckpt_model_path": "ckpt_model/weibo/post_single_response/transformer"
+  "ckpt_model_path": "ckpt_model/weibo/post_single_response/conv"
 }
 
