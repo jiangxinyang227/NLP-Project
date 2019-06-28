@@ -12,7 +12,6 @@
   "vocab_size": 50000,
   "num_heads": 8,
   "num_blocks": 6,
-  "dropout_rate": 0.2,
   "ln_epsilon": 1e-8,
   "lr_epsilon": 1e-8,
   "warmup_step": 3000,
