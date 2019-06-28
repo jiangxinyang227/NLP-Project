@@ -1,30 +1,23 @@
 import tensorflow as tf
+from .base import BaseModel
 
 
-class Seq2SeqConv(object):
+class Seq2SeqConv(BaseModel):
     """
     定义卷积到卷积的seq2seq网络结构
     """
 
     def __init__(self, config, vocab_size, word_vectors=None, training=True):
+        super(Seq2SeqConv, self).__init__(config)
 
         self.embedding_size = config["embedding_size"]
         self.hidden_size = config["hidden_size"]
-        self.batch_size = config["batch_size"]
         self.vocab_size = vocab_size
         self.word_vectors = word_vectors
         self.num_layers = config["num_layers"]
         self.kernel_size = config["kernel_size"]
         self.num_filters = config["num_filters"]
         self.training = training
-
-        # 定义模型的placeholder, 也就是喂给feed_dict的参数
-        self.encoder_inputs = tf.placeholder(tf.int32, [self.batch_size, None], name='encoder_inputs')
-        self.encoder_length = tf.placeholder(tf.int32, [self.batch_size], name='encoder_length')
-        self.decoder_inputs = tf.placeholder(tf.int32, [self.batch_size, None], name='decoder_inputs')
-        self.decoder_outputs = tf.placeholder(tf.int32, [self.batch_size, None], name="decoder_outputs")
-        self.decoder_length = tf.placeholder(tf.int32, [self.batch_size], name='decoder_targets_length')
-        self.keep_prob = tf.placeholder(tf.float32, name='keep_prob')
 
         # 根据目标序列长度，选出其中最大值，然后使用该值构建序列长度的mask标志。用一个sequence_mask的例子来说明起作用
         self.encoder_max_len = tf.reduce_max(self.encoder_length, name="encoder_max_len")
@@ -35,6 +28,7 @@ class Seq2SeqConv(object):
 
         # 实例化对象时构建网络结构
         self.build_network()
+        self.init_saver()
 
     def encoder_layer(self, inputs, input_len, training):
         """
@@ -89,7 +83,7 @@ class Seq2SeqConv(object):
         """
         embedded_word = tf.nn.embedding_lookup(self.embedding_matrix, encoder_inputs)
 
-        embedded_word += self._position_embedding(embedded_word, encoder_max_len)
+        embedded_word += self._position_embedding(embedded_word, encoder_max_len, "encoder")
         embedded_word_drop = tf.nn.dropout(embedded_word, self.keep_prob)
 
         with tf.name_scope("encoder_start_linear_map"):
@@ -215,7 +209,7 @@ class Seq2SeqConv(object):
         """
         embedded_word = tf.nn.embedding_lookup(self.embedding_matrix, decoder_inputs)
 
-        embedded_word += self._position_embedding(embedded_word, decoder_max_len)
+        embedded_word += self._position_embedding(embedded_word, decoder_max_len, "decoder")
         embedded_word = tf.nn.dropout(embedded_word, self.keep_prob)
 
         with tf.variable_scope("decoder_start_linear_map"):
@@ -354,21 +348,18 @@ class Seq2SeqConv(object):
         a, b = tf.split(x, num_or_size_splits=2, axis=2)
         return tf.multiply(tf.nn.sigmoid(b), a)
 
-    def _position_embedding(self, inputs, mode):
+    def _position_embedding(self, inputs, max_len, mode):
         """
         对映射后的词向量加上位置向量，位置向量和transformer中的位置向量一样
         :param inputs: [batch_size, seq_len, embedding_size]
         :return: [batch_size, seq_len, embedding_size]
         """
-
-        seq_len = tf.shape(inputs)[1]
         d_model = self.embedding_size
-        print(d_model)
 
         # [embedding_size, seq_len]
-        pos = tf.cast(tf.tile(tf.expand_dims(tf.range(seq_len), axis=0), multiples=[d_model, 1]), tf.float32)
+        pos = tf.cast(tf.tile(tf.expand_dims(tf.range(max_len), axis=0), multiples=[d_model, 1]), tf.float32)
         # [embedding_size, seq_len]
-        i = tf.cast(tf.tile(tf.expand_dims(tf.range(d_model), axis=1), multiples=[1, seq_len]), tf.float32)
+        i = tf.cast(tf.tile(tf.expand_dims(tf.range(d_model), axis=1), multiples=[1, max_len]), tf.float32)
 
         # 定义正弦和余弦函数
         sine = tf.sin(tf.divide(pos, tf.pow(float(10 ** 4), tf.divide(i, d_model))))  # [E, T]
@@ -409,16 +400,15 @@ class Seq2SeqConv(object):
 
         return embeddings
 
-    def train_method(self, decoder_output):
+    def train_method(self):
         """
         定义训练方法和损失
-        :param decoder_output:
         :return:
         """
-        self.predictions = tf.argmax(decoder_output, axis=-1, name="predictions")
+        self.predictions = tf.argmax(self.logits, axis=-1, name="predictions")
 
         # [batch_size, de_seq_len]
-        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=decoder_output, labels=self.decoder_outputs)
+        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits, labels=self.decoder_outputs)
         decoder_mask = tf.sequence_mask(self.decoder_length, self.decoder_max_len,
                                         dtype=tf.float32, name='target_masks')
         losses = tf.boolean_mask(loss, decoder_mask)
@@ -431,41 +421,55 @@ class Seq2SeqConv(object):
         clip_gradients, _ = tf.clip_by_global_norm(gradients, 1)
         self.train_op = optimizer.apply_gradients(zip(clip_gradients, trainable_params), name="train_op")
 
+        tf.summary.scalar("loss", self.loss)
+        self.summary_op = tf.summary.merge_all()
+
     def build_network(self):
         with tf.name_scope("encoder"):
             encoder_embedded, encoder_output = self.encoder(self.encoder_inputs, self.encoder_length,
                                                             self.encoder_max_len, self.training)
 
         with tf.name_scope("decoder"):
-            decoder_output = self.decoder(self.decoder_inputs, self.decoder_length, self.decoder_max_len,
-                                          encoder_embedded, encoder_output, self.encoder_length, self.training)
+            self.logits = self.decoder(self.decoder_inputs, self.decoder_length, self.decoder_max_len,
+                                       encoder_embedded, encoder_output, self.encoder_length, self.training)
 
-        self.train_method(decoder_output)
+        self.train_method()
 
     def train(self, sess, batch, keep_prob):
-        feed_dict = {self.encoder_inputs: batch["sources"],
-                     self.encoder_length: batch["source_length"],
-                     self.decoder_inputs: batch["targets"],
-                     self.decoder_length: batch["target_length"],
-                     self.keep_prob: keep_prob}
-        _, loss, predictions = sess.run([self.train_op, self.loss, self.predictions], feed_dict=feed_dict)
+        """
+        对于训练阶段，需要执行self.train_op, self.loss, self.summary_op三个op，并传入相应的数据
+        :param sess:
+        :param batch:
+        :param keep_prob:
+        :return:
+        """
 
-        return loss, predictions
+        feed_dict = {self.encoder_inputs: batch["encoder_inputs"],
+                     self.decoder_inputs: batch["decoder_inputs"],
+                     self.decoder_outputs: batch["decoder_outputs"],
+                     self.encoder_length: batch["encoder_length"],
+                     self.decoder_length: batch["decoder_length"],
+                     self.keep_prob: keep_prob
+                     }
 
-    def valid(self, sess, batch, keep_prob):
-        feed_dict = {self.encoder_inputs: batch["sources"],
-                     self.encoder_length: batch["source_length"],
-                     self.decoder_inputs: batch["targets"],
-                     self.decoder_length: batch["target_length"],
-                     self.keep_prob: keep_prob}
-        loss, predictions = sess.run([self.loss, self.predictions], feed_dict=feed_dict)
+        # 训练模型
+        _, summary, loss, predictions = sess.run([self.train_op, self.summary_op, self.loss, self.predictions],
+                                                 feed_dict=feed_dict)
+        return summary, loss, predictions
 
-        return loss, predictions
-
-    def infer(self, sess, batch, keep_prob):
-        feed_dict = {self.encoder_inputs: batch["sources"],
-                     self.encoder_length: batch["source_length"],
-                     self.keep_prob: keep_prob}
-        predictions = sess.run(self.predictions, feed_dict=feed_dict)
-
-        return predictions
+    def eval(self, sess, batch):
+        """
+        对于eval阶段，不需要反向传播，所以只执行self.loss, self.summary_op两个op，并传入相应的数据
+        :param sess:
+        :param batch:
+        :return:
+        """
+        feed_dict = {self.encoder_inputs: batch["encoder_inputs"],
+                     self.decoder_inputs: batch["decoder_inputs"],
+                     self.decoder_outputs: batch["decoder_outputs"],
+                     self.encoder_length: batch["encoder_length"],
+                     self.decoder_length: batch["decoder_length"],
+                     self.keep_prob: 1.0
+                     }
+        summary, loss, predictions = sess.run([self.summary_op, self.loss, self.predictions], feed_dict=feed_dict)
+        return summary, loss, predictions
