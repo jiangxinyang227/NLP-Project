@@ -93,7 +93,7 @@ class EvalData(EvalPredictDataBase):
                            for response in decoder_outputs]
 
         return dict(encoder_inputs=encoder_inputs, decoder_inputs=decoder_inputs, decoder_outputs=decoder_outputs,
-                    encoder_max_len=max_question_length, decoder_max_len=max_decoder_inputs_length)
+                    encoder_length=question_length, decoder_length=decoder_inputs_length)
 
     def gen_data(self):
         """

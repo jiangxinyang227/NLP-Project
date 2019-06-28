@@ -8,15 +8,20 @@ class Seq2SeqBiLstm(object):
         self.embedding_size = config["embedding_size"]
         self.encoder_hidden_sizes = config["encoder_hidden_sizes"]
         self.decoder_hidden_sizes = config["decoder_hidden_sizes"]
-        self.num_blocks = config["num_blocks"]  # transformer block的数量
         self.batch_size = config["batch_size"]
         self.keep_prob = config["keep_prob"]
-        self.hidden_size = config["hidden_size"]  # feed forward层的隐层大小
         self.learning_rate = config["learning_rate"]  # 学习速率
-        self.epsilon = config["lr_epsilon"]  # layer normalization 中除数中的极小值
         self.smooth_rate = config["smooth_rate"]  # smooth label的比例
         self.warmup_step = config["warmup_step"]  # 学习速率预热的步数
         self.decode_step = config["decode_step"]  # 解码的最大长度
+
+        # 定义模型的placeholder, 也就是喂给feed_dict的参数
+        self.encoder_inputs = tf.placeholder(tf.int32, [self.batch_size, None], name='encoder_inputs')
+        self.encoder_length = tf.placeholder(tf.int32, [self.batch_size], name='encoder_length')
+        self.decoder_inputs = tf.placeholder(tf.int32, [self.batch_size, None], name='decoder_inputs')
+        self.decoder_outputs = tf.placeholder(tf.int32, [self.batch_size, None], name="decoder_outputs")
+        self.decoder_length = tf.placeholder(tf.int32, [self.batch_size], name='decoder_targets_length')
+        self.keep_prob = tf.placeholder(tf.float32, name='keep_prob')
 
         # 编码和解码共享embedding矩阵，若是不同语言的，如机器翻译，就各定义一个embedding矩阵
         self.embedding_matrix = self._get_embedding_matrix()
@@ -60,8 +65,8 @@ class Seq2SeqBiLstm(object):
         with tf.name_scope("encoder"):
 
             # embedding 层
-            embeddings = self._get_embedding_matrix()
-            embedded_words = tf.nn.embedding_lookup(embeddings, encoder_inputs)
+            embedded_word = tf.nn.embedding_lookup(self.embedding_matrix, encoder_inputs)
+            embedded_word_drop = tf.nn.dropout(embedded_word, self.keep_prob)
 
             states = []
             with tf.name_scope("Bi-LSTM"):
@@ -81,7 +86,7 @@ class Seq2SeqBiLstm(object):
                         # fw和bw的hidden_size一样
                         # current_state 是最终的状态，二元组(state_fw, state_bw)，state_fw=[batch_size, s]，s是一个元祖(h, c)
                         outputs, current_state = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell,
-                                                                                 embedded_words, dtype=tf.float32,
+                                                                                 embedded_word_drop, dtype=tf.float32,
                                                                                  scope="bi-lstm" + str(idx))
                         # 对双向输出的状态进行拼接合并
                         fw_state, bw_state = current_state
@@ -92,12 +97,12 @@ class Seq2SeqBiLstm(object):
                         state = tf.nn.rnn_cell.LSTMStateTuple(state_c, state_h)
                         states.append(state)
                         # 对outputs中的fw和bw的结果拼接 [batch_size, time_step, hidden_size * 2]
-                        embedded_words = tf.concat(outputs, 2)
+                        embedded_word_drop = tf.concat(outputs, 2)
 
         # 对双向输出的状态进行拼接合并
 
         tuple_states = tuple(states)
-        return embedded_words, tuple_states, embeddings
+        return embedded_word_drop, tuple_states
 
     def decode(self, encoder_inputs, decoder_inputs, encoder_outputs, training=True):
         """
