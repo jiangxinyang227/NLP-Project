@@ -96,6 +96,8 @@ class Seq2SeqConv(BaseModel):
                                                       w_start, b_start),
                                       [self.batch_size, -1, self.hidden_size])  # [batch_size, seq_len, hidden_size]
 
+            inputs_start = tf.nn.dropout(inputs_start, keep_prob=self.keep_prob)
+
         # 维度不变
         for layer_id in range(self.num_layers):
             with tf.name_scope("encoder_layer_" + str(layer_id)):
@@ -211,6 +213,7 @@ class Seq2SeqConv(BaseModel):
 
         embedded_word += self._position_embedding(embedded_word, decoder_max_len, "decoder")
         embedded_word = tf.nn.dropout(embedded_word, self.keep_prob)
+        print(embedded_word)
 
         with tf.variable_scope("decoder_start_linear_map"):
             w_start = tf.get_variable("w_start", shape=[self.embedding_size, self.hidden_size],
@@ -221,6 +224,8 @@ class Seq2SeqConv(BaseModel):
                                                                  [-1, self.embedding_size]),
                                                       w_start, b_start),
                                       [self.batch_size, -1, self.hidden_size])  # [batch_size, seq_len, hidden_size]
+
+            inputs_start = tf.nn.dropout(inputs_start, keep_prob=self.keep_prob)
 
         for layer_id in range(self.num_layers):
             with tf.variable_scope("decoder_layer_" + str(layer_id)):
@@ -243,13 +248,15 @@ class Seq2SeqConv(BaseModel):
                                                       w_final, b_final),
                                       [self.batch_size, -1, self.embedding_size])
 
+            inputs_final = tf.nn.dropout(inputs_final, keep_prob=self.keep_prob)
+
         with tf.name_scope("output"):
-            w_output = tf.get_variable("w_output", shape=[self.hidden_size, self.vocab_size],
+            w_output = tf.get_variable("w_output", shape=[self.embedding_size, self.vocab_size],
                                        initializer=tf.contrib.layers.xavier_initializer())
             b_output = tf.Variable(tf.constant(0.1, shape=[self.vocab_size]), name="b_output")
 
             output = tf.reshape(tf.nn.xw_plus_b(tf.reshape(inputs_final,
-                                                           [-1, self.hidden_size]),
+                                                           [-1, self.embedding_size]),
                                                 w_output, b_output),
                                 [self.batch_size, -1, self.vocab_size])
 
