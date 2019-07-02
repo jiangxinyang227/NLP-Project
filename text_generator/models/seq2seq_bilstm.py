@@ -42,6 +42,7 @@ class Seq2SeqBiLstmModel(BaseModel):
         创建多层cell
         :return:
         """
+
         def get_lstm_cell(hidden_size):
             """
             创建单个cell ，并添加dropout
@@ -95,8 +96,8 @@ class Seq2SeqBiLstmModel(BaseModel):
                         # fw和bw的hidden_size一样
                         # current_state 是最终的状态，二元组(state_fw, state_bw)，state_fw=[batch_size, s]，s是一个元祖(h, c)
                         outputs, current_state = tf.nn.bidirectional_dynamic_rnn(lstm_fw_cell, lstm_bw_cell,
-                                                                         embedded_words, dtype=tf.float32,
-                                                                         scope="bi-lstm" + str(idx))
+                                                                                 embedded_words, dtype=tf.float32,
+                                                                                 scope="bi-lstm" + str(idx))
                         # 对双向输出的状态进行拼接合并
                         fw_state, bw_state = current_state
                         fw_state_c, fw_state_h = fw_state
@@ -130,8 +131,9 @@ class Seq2SeqBiLstmModel(BaseModel):
                 encoder_output = tf.contrib.seq2seq.tile_batch(encoder_output, multiplier=self.beam_size)
                 # 对encoder state中各元素做上面相同的操作，在这里用到了nest.map_structure函数，
                 # 是因为state中包括lstm中的h和c
-                encoder_state = nest.map_structure(lambda s: tf.contrib.seq2seq.tile_batch(s, multiplier=self.beam_size),
-                                                   encoder_state)
+                encoder_state = nest.map_structure(
+                    lambda s: tf.contrib.seq2seq.tile_batch(s, multiplier=self.beam_size),
+                    encoder_state)
                 # 对encoder_inputs_length做上面相同的操作
                 encoder_inputs_length = tf.contrib.seq2seq.tile_batch(encoder_inputs_length,
                                                                       multiplier=self.beam_size)
