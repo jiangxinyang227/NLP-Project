@@ -1,6 +1,28 @@
-### 语言模型
+### 文本分类
 
-#### textcnn：基于textcnn的文本分类
+#### 数据预处理
+要求训练集和测试集分开存储，对于中文的数据必须先分词，对分词后的词用空格符分开，并且将标签连接到每条数据的尾部，标签和句子用分隔符<SEP>分开。具体的如下：
+* 今天 的 天气 真好<SEP>积极
+
+#### 文件结构介绍
+* config文件：配置各种模型的配置参数
+* data：存放训练集和测试集
+* ckpt_model：存放checkpoint模型文件
+* pb_model：存放pb模型文件
+* outputs：存放vocab，word_to_index, label_to_index, 处理后的数据
+* models：存放模型代码
+* trainers：存放训练代码
+* predictors：存放预测代码
+
+#### 训练模型
+* python train.py --config_path="config/textcnn_config.json"
+
+#### 预测模型
+* 预测代码都在predictors/predict.py中，初始化Predictor对象，调用predict方法即可。
+
+#### 模型的配置参数详述
+
+##### textcnn：基于textcnn的文本分类
 * model_name：模型名称
 * epochs：全样本迭代次数
 * checkpoint_every：迭代多少步保存一次模型文件
@@ -25,7 +47,7 @@
 * ckpt_model_path：checkpoint 模型的存储路径
 * pb_model_path：pb 模型的存储路径
 
-#### bilstm：基于bilstm的文本分类
+##### bilstm：基于bilstm的文本分类
 * model_name：模型名称
 * epochs：全样本迭代次数
 * checkpoint_every：迭代多少步保存一次模型文件
@@ -49,7 +71,7 @@
 * ckpt_model_path：checkpoint 模型的存储路径
 * pb_model_path：pb 模型的存储路径
 
-#### bilstm atten：基于bilstm + attention 的文本分类
+##### bilstm atten：基于bilstm + attention 的文本分类
 * model_name：模型名称
 * epochs：全样本迭代次数
 * checkpoint_every：迭代多少步保存一次模型文件
@@ -73,7 +95,7 @@
 * ckpt_model_path：checkpoint 模型的存储路径
 * pb_model_path：pb 模型的存储路径
 
-#### rcnn：基于rcnn的文本分类
+##### rcnn：基于rcnn的文本分类
 * model_name：模型名称
 * epochs：全样本迭代次数
 * checkpoint_every：迭代多少步保存一次模型文件
@@ -98,7 +120,7 @@
 * ckpt_model_path：checkpoint 模型的存储路径
 * pb_model_path：pb 模型的存储路径
 
-#### transformer：基于transformer的文本分类
+##### transformer：基于transformer的文本分类
 * model_name：模型名称
 * epochs：全样本迭代次数
 * checkpoint_every：迭代多少步保存一次模型文件
