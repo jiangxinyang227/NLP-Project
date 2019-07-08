@@ -14,7 +14,7 @@
 * predictors：存放预测代码
 
 #### 训练模型
-* python train.py --config_path="config/textcnn_config.json"
+* python train.py --config_path="config/char_rnn_config.json"
 
 #### 预测模型
 * 预测代码都在predictors/predict.py中，初始化Predictor对象，调用predict方法即可。
