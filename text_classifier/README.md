@@ -8,6 +8,7 @@
 * config文件：配置各种模型的配置参数
 * data：存放训练集和测试集
 * ckpt_model：存放checkpoint模型文件
+* data_helpers：提供数据处理的方法
 * pb_model：存放pb模型文件
 * outputs：存放vocab，word_to_index, label_to_index, 处理后的数据
 * models：存放模型代码
