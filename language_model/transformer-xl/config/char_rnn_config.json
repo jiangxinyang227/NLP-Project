@@ -1,0 +1,22 @@
+{
+  "model_name": "char_rnn",
+  "epochs": 20,
+  "checkpoint_every": 100,
+  "eval_every": 100,
+  "learning_rate": 1e-3,
+  "optimization": "adam",
+  "embedding_size": 100,
+  "hidden_sizes": [128, 128],
+  "batch_size": 32,
+  "sequence_length": 26,
+  "vocab_size": 5000,
+  "keep_prob": 0.5,
+  "max_grad_norm": 5.0,
+  "train_data": "data/poetry/new_train_data.txt",
+  "eval_data": "data/poetry/eval_data.txt",
+  "output_path": "outputs/poetry/char_rnn",
+  "word_vectors_path": null,
+  "ckpt_model_path": "ckpt_model/poetry/char_rnn",
+  "pb_model_path": "pb_model/poetry/char_rnn/savedModel"
+}
+
