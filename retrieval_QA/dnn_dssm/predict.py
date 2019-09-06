@@ -1,46 +1,43 @@
 import json
 import os
 
+import jieba
 import numpy as np
 import tensorflow as tf
 from model import DnnDssmModel
 
 
 class TextCnnPredictor(object):
-    def __init__(self, config):
+    def __init__(self, config, init_size, batch_size, samples):
 
         self.config = config
-        self.word_to_index, self.word_vectors = self.load_vocab()
-        self.vocab_size = len(self.word_to_index)
-        self.sequence_length = self.config["sequence_length"]
+        self.init_size = init_size
+        self.batch_size = batch_size
+        self.samples = samples
 
         # 创建模型
         self.model = self.create_model()
         # 加载计算图
         self.sess = self.load_graph()
 
-    def load_vocab(self):
-        # 将词汇-索引映射表加载出来
-        with open(os.path.join(self.config["output_path"], "word_to_index.json"), "r") as f:
-            word_to_index = json.load(f)
-
-        if os.path.exists(os.path.join(self.config["output_path"], "word_vectors.npy")):
-            word_vectors = np.load(os.path.join(self.config["output_path"], "word_vectors.npy"))
-        else:
-            word_vectors = None
-
-        return word_to_index, word_vectors
-
-    def sentence_to_idx(self, sentence):
+    def sentence_to_idx(self, sentences, tf_idf_model, dictionary):
         """
-        将分词后的句子转换成idx表示
-        :param sentence:
+
+        :param sentences:
+        :param tf_idf_model:
+        :param dictionary:
         :return:
         """
-        sentence_ids = [self.word_to_index.get(token, self.word_to_index["<UNK>"]) for token in sentence]
-        sentence_pad = sentence_ids[: self.sequence_length] if len(sentence_ids) > self.sequence_length \
-            else sentence_ids + [0] * (self.sequence_length - len(sentence_ids))
-        return sentence_pad
+        sentences = [jieba.lcut(sentence) for sentence in sentences]
+        question_ids = []
+        for question in sentences:
+            bow_vec = dictionary.doc2bow(question)
+            tfidf_vec = tf_idf_model[bow_vec]
+            vec = [0] * self.init_size
+            for item in tfidf_vec:
+                vec[item[0]] = item[1]
+            question_ids.append(vec)
+        return question_ids
 
     def load_graph(self):
         """
@@ -48,8 +45,7 @@ class TextCnnPredictor(object):
         :return:
         """
         sess = tf.Session()
-        ckpt = tf.train.get_checkpoint_state(os.path.join(os.path.abspath(os.path.dirname(os.getcwd())),
-                                                          self.config["ckpt_model_path"]))
+        ckpt = tf.train.get_checkpoint_state(self.config["ckpt_model_path"])
         if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
             print('Reloading model parameters..')
             self.model.saver.restore(sess, ckpt.model_checkpoint_path)
@@ -63,16 +59,21 @@ class TextCnnPredictor(object):
         :return:
         """
 
-        model = DnnDssmModel(config=self.config, vocab_size=self.vocab_size, word_vectors=self.word_vectors)
+        model = DnnDssmModel(config=self.config, init_size=self.init_size, batch_size=self.batch_size,
+                             samples=self.samples, is_training=False)
         return model
 
-    def predict(self, sentence):
+    def predict(self, query, candidates, tf_idf_model, dictionary):
         """
-        给定分词后的句子，预测其分类结果
-        :param sentence:
+
+        :param query:
+        :param candidates:
+        :param tf_idf_model:
+        :param dictionary:
         :return:
         """
-        sentence_ids = self.sentence_to_idx(sentence)
-        prediction = self.model.infer(self.sess, [sentence_ids]).tolist()[0]
-        label = self.index_to_label[prediction]
-        return label
+        candidate_ids = self.sentence_to_idx(candidates, tf_idf_model, dictionary)
+        query_ids = self.sentence_to_idx([query], tf_idf_model, dictionary)
+        batch = dict(query=query_ids, sim=candidate_ids)
+        prediction = self.model.infer(self.sess, batch).tolist()[0]
+        return prediction
