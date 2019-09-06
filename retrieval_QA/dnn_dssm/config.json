@@ -1,0 +1,20 @@
+{
+  "epochs": 50,
+  "checkpoint_every": 20,
+  "eval_every": 20,
+  "optimization": "adam",
+  "learning_rate": 1e-3,
+  "hidden_sizes": [128],
+  "batch_size": 16,
+  "neg_samples": 1,
+  "n_tasks": 10000,
+  "margin": 0.5,
+  "low_freq": 0,
+  "keep_prob": 0.5,
+  "max_grad_norm": 5.0,
+  "train_data": "",
+  "stop_word": "",
+  "output_path": "",
+  "word_vector_path": "",
+  "ckpt_model_path": ""
+}
