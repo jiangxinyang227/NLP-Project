@@ -125,10 +125,10 @@ class JaccardDistance(object):
     def get_top_n_answer(self, sentence, n=15, interval=0.2, answer_num=5):
         """
         通过给定一个间隔值来决定返回一个或多个回答
-        :param sentence:
-        :param n:
-        :param interval:
-        :param answer_num:
+        :param sentence: 用户输入的句子
+        :param n: 候选的答案
+        :param interval: 和最高分数之间的间隔，如果小于该间隔，则返回两个或多个
+        :param answer_num: 最大的回答数量
         :return:
         """
         question_scores = defaultdict(list)
@@ -165,7 +165,7 @@ class JaccardDistance(object):
         """
         根据question_id对应的分数列表取平均值来决定选择哪个question对应的answer
         :param sentence:
-        :param n:
+        :param n: 候选答案的数量
         :return:
         """
         question_scores = defaultdict(list)
@@ -186,7 +186,7 @@ class JaccardDistance(object):
         """
 
         :param sentence:
-        :param n:
+        :param n: 候选的数量
         :return:
         """
         sort_scores = self.get_top_n_scores(sentence, n)
