@@ -33,4 +33,4 @@
 * stop_word：停用词文件路径
 * output_path：输出文件路径
 * word_vector_path：词向量文件路径
-*ckpt_model_path：checkpoint 文件路径
+* ckpt_model_path：checkpoint 文件路径
