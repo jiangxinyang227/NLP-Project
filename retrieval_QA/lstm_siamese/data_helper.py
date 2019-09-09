@@ -16,7 +16,7 @@ class SiameseLstmData(object):
         if not os.path.exists(self.__output_path):
             os.makedirs(self.__output_path)
 
-        self.__neg_samples = config["neg_samples"]
+        self.__n_tasks = config["n_tasks"]
         self.__stop_word_path = config["stop_word_path"]
         self.__embedding_size = config["embedding_size"]
         self.__word_vector_path = config["word_vector_path"]
@@ -33,33 +33,36 @@ class SiameseLstmData(object):
         :return:
         """
         queries = []
-        sims = []
 
-        return queries, sims
+        return queries
 
-    def neg_samples(self, queries, sims):
+    def neg_samples(self, queries):
         """
         随机负采样多个样本
         :param queries:
-        :param sims:
         :return:
         """
         new_queries = []
         new_sims = []
         labels = []
-        for query, sim in zip(queries, sims):
-            copy_sims = copy.copy(sims)
-            copy_sims.remove(sim)
-            other_sims = list(chain(*copy_sims))
-            for sample in sim:
-                neg_samples = random.sample(other_sims, self.__neg_samples)
-                for neg_sample in neg_samples:
-                    new_queries.append(query)
-                    new_sims.append(neg_sample)
-                    labels.append(0)
-                new_queries.append(query)
-                new_sims.append(sample)
+
+        for_nums = self.__n_tasks // len(queries)
+        for _ in range(for_nums):
+            for queries_ in queries:
+                copy_queries = copy.copy(queries)
+                copy_queries.remove(queries_)
+                other_queries = list(chain(*copy_queries))
+                pos_samples = random.sample(queries_, 2)
+                neg_sample = random.choice(other_queries)
+
+                # 创建正样本对
+                new_queries.append(pos_samples[0])
+                new_sims.append(pos_samples[1])
                 labels.append(1)
+                # 创建负样本对
+                new_queries.append(pos_samples[0])
+                new_sims.append(neg_sample)
+                labels.append(0)
         return new_queries, new_sims, labels
 
     def remove_stop_word(self, inputs):
@@ -132,24 +135,22 @@ class SiameseLstmData(object):
         return word_to_index
 
     @staticmethod
-    def trans_to_index(queries, sims, word_to_index):
+    def trans_to_index(queries, word_to_index):
         """
 
         :param queries:
-        :param sims:
         :param word_to_index:
         :return:
         """
-        query_ids = [[word_to_index.get(word, word_to_index["<UNK>"]) for word in query] for query in queries]
-        sim_ids = [[[word_to_index.get(word, word_to_index["<UNK>"]) for word in sample]
-                    for sample in samples]
-                   for samples in sims]
-        return query_ids, sim_ids
+        query_ids = [[[word_to_index.get(word, word_to_index["<UNK>"]) for word in sample]
+                      for sample in samples]
+                     for samples in queries]
+        return query_ids
 
     @staticmethod
     def padding(query_ids, sim_ids, label_ids):
         """
-
+        对输入的句子进行补全
         :param query_ids:
         :param sim_ids:
         :param label_ids:
@@ -172,16 +173,16 @@ class SiameseLstmData(object):
         :param file_path:
         :return:
         """
-        queries, sims = self.load_data(file_path)
-        words = self.remove_stop_word(queries + list(chain(*sims)))
+        queries, = self.load_data(file_path)
+        words = self.remove_stop_word(queries)
         word_to_index = self.gen_vocab(words)
-        query_ids, sim_ids = self.trans_to_index(queries, sims, word_to_index)
-        query_ids, sim_ids, label_ids = self.neg_samples(query_ids, sim_ids)
-        return query_ids, sim_ids, label_ids
+        query_ids = self.trans_to_index(queries, word_to_index)
+        query_ids, sim_ids, label_ids = self.neg_samples(query_ids)
+        return query_ids, label_ids
 
     def next_batch(self, x, y, label, batch_size):
         """
-
+        生成batch 数据
         :param x:
         :param y:
         :param label:
