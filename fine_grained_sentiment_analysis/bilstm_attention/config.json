@@ -1,0 +1,25 @@
+{
+  "epochs": 5,
+  "checkpoint_every": 200,
+  "eval_every": 200,
+  "learning_rate": 1e-3,
+  "optimization": "adam",
+  "embedding_size": 200,
+  "hidden_sizes": [128, 128],
+  "sequence_length": 250,
+  "low_freq": 4,
+  "batch_size": 128,
+  "num_aspects": 3,
+  "num_classes": 4,
+  "keep_prob": 0.5,
+  "l2_reg_lambda": 0.0,
+  "max_grad_norm": 5.0,
+  "train_data": "data/token_train_data.csv",
+  "eval_data": "data/token_valid_data.csv",
+  "stop_word_path": "data/哈工大停用词表扩展.txt",
+  "output_path": "output/bilstm_attention",
+  "word_vector_path": "word_embedded/size200_min_count5_skip_gram_iter5",
+  "ckpt_model_path": "ckpt_model/bilstm_attention",
+  "pb_model_path": "pb_model/bilstm_attention"
+}
+

@@ -1,0 +1,2 @@
+data filter=lfs diff=lfs merge=lfs -text
+word_embedded/ filter=lfs diff=lfs merge=lfs -text
