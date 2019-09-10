@@ -1,0 +1,26 @@
+{
+  "model_name": "seq2seq_gru",
+  "epochs": 16,
+  "checkpoint_every": 10000,
+  "eval_every": 10000,
+  "learning_rate": 1e-3,
+  "optimization": "adam",
+  "embedding_size": 200,
+  "encoder_hidden_sizes": [256, 256],
+  "decoder_hidden_sizes": [512, 512],
+  "batch_size": 64,
+  "dropout_rate": 0.3,
+  "vocab_size": 50000,
+  "warmup_step": 3000,
+  "smooth_rate": 0.1,
+  "decode_step": 100,
+  "beam_search": true,
+  "beam_size": 10,
+  "max_grad_norm": 5.0,
+  "train_data": "../data/train_data.txt",
+  "eval_data": "../data/eval_data.txt",
+  "output_path": "output/",
+  "word_vectors_path": null,
+  "ckpt_model_path": "ckpt_model/bigru"
+}
+
