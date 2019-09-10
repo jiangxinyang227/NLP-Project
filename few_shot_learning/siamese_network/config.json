@@ -1,0 +1,24 @@
+{
+  "model_name": "siamese",
+  "epochs": 50,
+  "checkpoint_every": 1000,
+  "eval_every": 1000,
+  "learning_rate": 1e-3,
+  "optimization": "adam",
+  "embedding_size": 50,
+  "hidden_sizes": [64],
+  "batch_size": 256,
+  "low_freq": 0,
+  "sequence_length": 100,
+  "neg_threshold": 0.4,
+  "keep_prob": 0.5,
+  "l2_reg_lambda": 0.0,
+  "max_grad_norm": 5.0,
+  "train_data": "../news_data/train",
+  "eval_data": "../news_data/eval",
+  "stop_word": "../news_data/stop_words.txt",
+  "output_path": "output/siamese",
+  "word_vectors_path": null,
+  "ckpt_model_path": "ckpt_model/siamese"
+}
+
