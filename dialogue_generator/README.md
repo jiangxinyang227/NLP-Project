@@ -8,3 +8,6 @@
 
 #### 数据集
     数据是华为开源的微博440w的对话数据，在这里我删除了一部分回答很多的数据。
+    链接：https://pan.baidu.com/s/1RR5VM_zJUs7jb1Q-UIZC4w 提取码：satw 
+
+    
