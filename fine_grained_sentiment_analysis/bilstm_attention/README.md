@@ -1,6 +1,7 @@
 #### 多粒度情感分析
 
 * 数据来源于 AI challenger 2018中的情感分析数据集。从整个数据集中选择了环境，卫生和服务三个维度的数据
+* 链接：https://pan.baidu.com/s/1Ikr70E7PR42bhBuqqp_Zyg 提取码：6esv 
 
 #### bilstm + attention
 * 首先执行word_embedded中的word2vec.py文件，生成词向量
