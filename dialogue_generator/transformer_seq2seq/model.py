@@ -47,8 +47,9 @@ class Seq2SeqTransformer(object):
         with tf.name_scope("encoder"):
             # 词嵌入层，并加上位置向量 [batch_size, sequence_length, embedding_size]
             embedded_word = tf.nn.embedding_lookup(self.embedding_matrix, encoder_inputs)
+            embedded_word *= self.hidden_size ** 0.5
             # [batch_size, sequence_length, embedding_size]
-            embedded_word += self._position_embedding(embedded_word, encoder_max_len, "encoder_position_embedding")
+            embedded_word += self._add_position_embedding(embedded_word, encoder_max_len, "encoder_position_embedding")
             # [batch_size, sequence_length, embedding_size]
             embedded_word = tf.nn.dropout(embedded_word, self.keep_prob)
 
@@ -83,8 +84,8 @@ class Seq2SeqTransformer(object):
         with tf.name_scope("decoder"):
             # embedding [batch_size, sequence_length, embedding_size]
             embedded_word = tf.nn.embedding_lookup(self.embedding_matrix, decoder_inputs)
-
-            embedded_word += self._position_embedding(embedded_word, decoder_max_len, "decoder_position_embedding")
+            embedded_word *= self.hidden_size ** 0.5
+            embedded_word = self._add_position_embedding(embedded_word, decoder_max_len, "decoder_position_embedding")
             embedded_word = tf.nn.dropout(embedded_word, self.keep_prob)
 
             for i in range(self.num_blocks):
@@ -131,14 +132,14 @@ class Seq2SeqTransformer(object):
             embeddings = tf.get_variable('embedding_w',
                                          dtype=tf.float32,
                                          shape=(self.vocab_size, self.embedding_size),
-                                         initializer=tf.contrib.layers.xavier_initializer())
+                                         initializer=tf.glorot_normal_initializer())
             if zero_pad:
                 embeddings = tf.concat((tf.zeros(shape=[1, self.embedding_size]),
                                         embeddings[1:, :]), 0)
 
         return embeddings
 
-    def _position_embedding(self, inputs, max_len, scope):
+    def _add_position_embedding(self, inputs, max_len, scope):
         """
         生成位置向量
         :return:
