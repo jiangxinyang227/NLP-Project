@@ -5,7 +5,7 @@ prototypical network model for few shot learning
 import tensorflow as tf
 
 
-class PrototypicalModel(object):
+class InductionModel(object):
     def __init__(self, config, vocab_size, word_vectors):
         self.config = config
         self.vocab_size = vocab_size
@@ -35,7 +35,7 @@ class PrototypicalModel(object):
                                           name="embedding_w")
             else:
                 embedding_w = tf.get_variable("embedding_w", shape=[self.vocab_size, self.config["embedding_size"]],
-                                              initializer=tf.contrib.layers.xavier_initializer())
+                                              initializer=tf.random_normal_initializer())
 
             # support embedding. dimension: [num_classes, num_support, sequence_length, embedding_size]
             support_embedded = tf.nn.embedding_lookup(embedding_w, self.support, name="support_embedded")

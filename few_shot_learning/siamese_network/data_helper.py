@@ -15,13 +15,14 @@ import numpy as np
 
 
 class SiameseData(object):
-    def __init__(self, output_path: str, sequence_length: int = 200,
+    def __init__(self, output_path: str, sequence_length: int = 200, neg_samples: int = 1,
                  stop_word_path: Optional[str] = None,
                  embedding_size: Optional[int] = None, low_freq: int = 0, num_sample_of_category: int = 10000,
                  word_vector_path: Optional[str] = None, is_training: bool = True):
         """
         init method
         :param output_path: path of train/eval data
+        :param neg_samples: num of neg sample, default 1
         :param stop_word_path: path of stop word file
         :param embedding_size: embedding size
         :param low_freq: frequency of words
@@ -35,6 +36,7 @@ class SiameseData(object):
             os.makedirs(self.__output_path)
 
         self.__sequence_length = sequence_length
+        self.__neg_samples = neg_samples
         self.__stop_word_path = stop_word_path
         self.__embedding_size = embedding_size
         self.__num_sample_of_category = num_sample_of_category
@@ -61,6 +63,13 @@ class SiameseData(object):
             category_data = []
             for category_file in category_files:
                 with open(os.path.join(category_file_path, category_file), "r", encoding="utf8") as fr:
+                #     import jieba
+                #     lines = [line.strip() for line in fr.readlines()]
+                #     lines = [" ".join(jieba.lcut(line)) for line in lines]
+                #     content = " ".join(lines)
+                #     print(content)
+                # with open(os.path.join(category_file_path, category_file), "w", encoding="utf8") as fr:
+                #     fr.write(content)
                     content = fr.read().strip().split(" ")
                     category_data.append(content)
             categories_data[category_dir] = category_data

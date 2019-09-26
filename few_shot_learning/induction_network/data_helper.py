@@ -14,10 +14,11 @@ import gensim
 import numpy as np
 
 
-class PrototypicalData(object):
-    def __init__(self, output_path: str, sequence_length: int = 200, num_classes: int = 3, num_support: int = 5,
-                 num_queries: int = 50, num_tasks: int = 10000, stop_word_path: Optional[str] = None,
-                 embedding_size: Optional[int] = None, low_freq: int = 0,
+class InductionData(object):
+    def __init__(self, output_path: str, sequence_length: int = 100, num_classes: int = 3, num_support: int = 5,
+                 num_queries: int = 50, num_tasks: int = 1000, num_eval_tasks: int = 100,
+                 stop_word_path: Optional[str] = None,
+                 embedding_size: Optional[int] = None, low_freq: int = 5,
                  word_vector_path: Optional[str] = None, is_training: bool = True):
         """
         init method
@@ -26,6 +27,7 @@ class PrototypicalData(object):
         :param num_support: number of support sample per class
         :param num_queries: number of query sample per class
         :param num_tasks: number of pre-sampling tasks, this will speeding up train
+        :param num_eval_tasks: number of pre-sampling tasks in eval stage
         :param stop_word_path: path of stop word file
         :param embedding_size: embedding size
         :param low_freq: frequency of words
@@ -42,6 +44,7 @@ class PrototypicalData(object):
         self.__num_support = num_support
         self.__num_queries = num_queries
         self.__num_tasks = num_tasks
+        self.__num_eval_tasks = num_eval_tasks
         self.__stop_word_path = stop_word_path
         self.__embedding_size = embedding_size
         self.__low_freq = low_freq
@@ -53,40 +56,40 @@ class PrototypicalData(object):
         self.current_category_index = 0  # record current sample category
 
     @staticmethod
-    def load_data(file_path: str) -> Dict[str, List[List[str]]]:
+    def load_data(data_path: str) -> Dict[str, Dict[str, List[List[str]]]]:
         """
         read train/eval data
-        :param file_path:
-        :return: dict. {class_name: [sample_1, ...., sample_n]}
+        :param data_path:
+        :return: dict. {class_name: {sentiment: [[]], }, ...}
         """
-        category_dirs = os.listdir(file_path)
+        category_files = os.listdir(data_path)
         categories_data = {}
-        for category_dir in category_dirs:
-            category_file_path = os.path.join(file_path, category_dir)
-            category_files = os.listdir(category_file_path)
-            category_data = []
-            for category_file in category_files:
-                with open(os.path.join(category_file_path, category_file), "r", encoding="utf8") as fr:
-                    #     import jieba
-                    #     lines = [line.strip() for line in fr.readlines()]
-                    #     lines = [" ".join(jieba.lcut(line)) for line in lines]
-                    #     content = " ".join(lines)
-                    #     print(content)
-                    # with open(os.path.join(category_file_path, category_file), "w", encoding="utf8") as fr:
-                    #     fr.write(content)
-                    content = fr.read().strip().split(" ")
-                    category_data.append(content)
-            categories_data[category_dir] = category_data
-
+        for category_file in category_files:
+            file_path = os.path.join(data_path, category_file)
+            sentiment_data = {}
+            with open(file_path, "r", encoding="utf8") as fr:
+                for line in fr.readlines():
+                    content, label = line.strip().split("\t")
+                    if sentiment_data.get(label, None):
+                        sentiment_data[label].append(content.split(" "))
+                    else:
+                        sentiment_data[label] = [content.split(" ")]
+            print("task name: ", category_file)
+            print("pos samples length: ", len(sentiment_data["1"]))
+            print("neg samples length: ", len(sentiment_data["-1"]))
+            categories_data[category_file] = sentiment_data
         return categories_data
 
-    def remove_stop_word(self, data: Dict[str, List[List[str]]]) -> List[str]:
+    def remove_stop_word(self, data: Dict[str, Dict[str, List[List[str]]]]) -> List[str]:
         """
         remove low frequency words and stop words, construct vocab
-        :param data: {class_name: [sample_1, ...., sample_n]}
+        :param data: {class_name: {sentiment: [[]], }, ...}
         :return:
         """
-        all_words = list(chain(*chain(*list(data.values()))))
+        all_words = []
+        for category, category_data in data.items():
+            for sentiment, sentiment_data in category_data.items():
+                all_words.extend(list(chain(*sentiment_data)))
         word_count = Counter(all_words)  # statistic the frequency of words
         sort_word_count = sorted(word_count.items(), key=lambda x: x[1], reverse=True)
 
@@ -152,105 +155,93 @@ class PrototypicalData(object):
         return word_to_index
 
     @staticmethod
-    def trans_to_index(data: Dict[str, List[List[str]]], word_to_index: Dict[str, int]) -> Dict[str, List[List[int]]]:
+    def trans_to_index(data: Dict[str, Dict[str, List[List[str]]]], word_to_index: Dict[str, int]) -> \
+            Dict[str, Dict[str, List[List[int]]]]:
         """
         transformer token to id
         :param data:
         :param word_to_index:
-        :return: {class_name: [sample_1, ..., sample_n]}
+        :return: {class_name: [[], [], ], ..}
         """
-        data_ids = {category: [[word_to_index.get(token, word_to_index["<UNK>"]) for token in line] for line in value]
-                    for category, value in data.items()}
+        data_ids = {category: {sentiment: [[word_to_index.get(token, word_to_index["<UNK>"]) for token in line]
+                                           for line in sentiment_data]
+                               for sentiment, sentiment_data in category_data.items()}
+                    for category, category_data in data.items()}
         return data_ids
 
-    def choice_support_query(self, category_data: List[List[int]]) -> Tuple[List[List[int]], List[List[int]]]:
+    def choice_support_query(self, task_data: Dict[str, List[List[int]]])\
+            -> Tuple[List[List[List[int]]], List[List[int]], List[int]]:
         """
-        selecting support data and query data form all data for a category
-        :param category_data: all data for a category
+        randomly selecting support set, query set form a task.
+        :param task_data: all data for a task
         :return:
         """
-        support_data = random.sample(category_data, self.__num_support)
-        other_data = copy.copy(category_data)
-        [other_data.remove(data) for data in support_data]
+        label_to_index = {"1": 0, "-1": 1}
         if self.__is_training:
-            query_data = random.sample(other_data, self.__num_queries)
-        else:
-            query_data = other_data
+            with open(os.path.join(self.__output_path, "label_to_index.json"), "w") as f:
+                json.dump(label_to_index, f)
+
+        pos_samples = task_data["1"]
+        neg_samples = task_data["-1"]
+        pos_support = random.sample(pos_samples, self.__num_support)
+        neg_support = random.sample(neg_samples, self.__num_support)
+
+        pos_others = copy.copy(pos_samples)
+        [pos_others.remove(data) for data in pos_support]
+
+        neg_others = copy.copy(neg_samples)
+        [neg_others.remove(data) for data in neg_support]
+
+        pos_query = random.sample(pos_others, self.__num_queries)
+        neg_query = random.sample(neg_others, self.__num_queries)
 
         # padding
-        support_data = self.padding(support_data)
-        query_data = self.padding(query_data)
-        return support_data, query_data
+        pos_support = self.padding(pos_support)
+        neg_support = self.padding(neg_support)
+        pos_query = self.padding(pos_query)
+        neg_query = self.padding(neg_query)
 
-    def train_samples(self, data_ids: Dict[str, List[List[int]]]) \
+        support_set = [pos_support, neg_support]  # [num_classes, num_support, sequence_length]
+        query_set = pos_query + neg_query  # [num_classes * num_queries, sequence_length]
+        labels = [label_to_index["1"]] * len(pos_query) + [label_to_index["-1"]] * len(neg_query)
+
+        return support_set, query_set, labels
+
+    def samples(self, data_ids: Dict[str, Dict[str, List[List[int]]]]) \
             -> List[Dict[str, Union[List[List[List[int]]], List[List[int]], List[int]]]]:
         """
         positive and negative sample from raw data
         :param data_ids:
         :return:
         """
+        # product name list
         category_list = list(data_ids.keys())
 
-        new_data = []
-        for i in range(self.__num_tasks):
-            support_category = random.sample(category_list, self.__num_classes)
-            support_set = []  # [num_classes, num_support, sequence_length]
-            query_set = []  # [num_classes * num_queries, sequence_length]
-            labels = []
-            for idx, category in enumerate(support_category):
-                category_data = data_ids[category]
-                support_data, query_data = self.choice_support_query(category_data)
-                label = [idx] * len(query_data)
-                support_set.append(support_data)
-                query_set.extend(query_data)
-                labels.extend(label)
-            new_data.append(dict(support=support_set, queries=query_set, labels=labels))
-        return new_data
-
-    def eval_sample(self, data_ids: Dict[str, List[List[int]]]) \
-            -> List[Dict[str, Union[List[List[List[int]]], List[List[int]], List[int]]]]:
-        """
-        sample for eval stage
-        :return:
-        """
-        category_list = list(data_ids.keys())
-        support_category = random.sample(category_list, self.__num_classes)
-        support_set = []  # [num_classes, num_support, sequence_length]
-        query_set = []  # [num_classes * num_queries, sequence_length]
-        labels = []
-        for idx, category in enumerate(support_category):
-            category_data = data_ids[category]
-            support_data, query_data = self.choice_support_query(category_data)
-            label = [idx] * len(query_data)
-            support_set.append(support_data)
-            query_set.extend(query_data)
-            labels.extend(label)
-
-        # split eval data into batches, avoiding memory overflow in eval stage
         tasks = []
-        batch_size = self.__num_classes * self.__num_queries
-        num_batches = len(query_set) // (self.__num_classes * self.__num_queries)
-        for i in range(num_batches):
-            query_batch = query_set[i * batch_size: (i + 1) * batch_size]
-            label_batch = labels[i * batch_size: (i + 1) * batch_size]
-            tasks.append(dict(support=support_set, queries=query_batch, labels=label_batch))
-
+        if self.__is_training:
+            num_tasks = self.__num_tasks
+        else:
+            num_tasks = self.__num_eval_tasks
+        for i in range(num_tasks):
+            # randomly choice a category to construct train sample
+            support_category = random.choice(category_list)
+            support_set, query_set, labels = self.choice_support_query(data_ids[support_category])
+            tasks.append(dict(support=support_set, queries=query_set, labels=labels))
         return tasks
 
-    def gen_data(self, file_path: str) -> List[Dict[str, Union[List[List[List[int]]], List[List[int]], List[int]]]]:
+    def gen_data(self, file_path: str) -> Dict[str, Dict[str, List[List[int]]]]:
         """
         Generate data that is eventually input to the model
         :return:
         """
+        # load data
         data = self.load_data(file_path)
+        # remove stop word
         words = self.remove_stop_word(data)
         word_to_index = self.gen_vocab(words)
+
         data_ids = self.trans_to_index(data, word_to_index)
-        if self.__is_training:
-            new_data = self.train_samples(data_ids)
-        else:
-            new_data = self.eval_sample(data_ids)
-        return new_data
+        return data_ids
 
     def padding(self, sentences: List[List[int]]) -> List[List[int]]:
         """
@@ -263,14 +254,15 @@ class PrototypicalData(object):
                         for sentence in sentences]
         return sentence_pad
 
-    @staticmethod
-    def next_batch(tasks: List[Dict[str, Union[List[List[List[int]]], List[List[int]], List[int]]]]) \
+    def next_batch(self, data_ids: Dict[str, Dict[str, List[List[int]]]]) \
             -> Dict[str, Union[List[List[List[int]]], List[List[int]], List[int]]]:
         """
         train a task at every turn
-        :param tasks:
+        :param data_ids:
         :return:
         """
-        random.shuffle(tasks)
+
+        tasks = self.samples(data_ids)
+
         for task in tasks:
             yield task

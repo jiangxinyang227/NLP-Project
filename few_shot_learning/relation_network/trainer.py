@@ -3,13 +3,12 @@ import os
 import argparse
 
 import tensorflow as tf
-import numpy as np
-from data_helper import PrototypicalData
-from model import PrototypicalModel
+from data_helper import RelationData
+from model import RelationModel
 from metrics import get_multi_metrics, mean
 
 
-class PrototypicalTrainer(object):
+class RelationTrainer(object):
     def __init__(self, args):
         self.args = args
         with open(args.config_path, "r") as fr:
@@ -31,10 +30,11 @@ class PrototypicalTrainer(object):
         init data object
         :return:
         """
-        data_obj = PrototypicalData(self.config["output_path"], sequence_length=self.config["sequence_length"],
-                                    num_classes=self.config["num_classes"], num_support=self.config["num_support"],
-                                    num_queries=self.config["num_queries"], num_tasks=self.config["num_tasks"],
-                                    is_training=is_training)
+        data_obj = RelationData(self.config["output_path"], sequence_length=self.config["sequence_length"],
+                                num_classes=self.config["num_classes"], num_support=self.config["num_support"],
+                                num_queries=self.config["num_queries"], num_tasks=self.config["num_tasks"],
+                                num_eval_tasks=self.config["num_eval_tasks"],
+                                is_training=is_training)
         return data_obj
 
     def create_model(self):
@@ -42,8 +42,8 @@ class PrototypicalTrainer(object):
         init model object
         :return:
         """
-        model = PrototypicalModel(config=self.config, vocab_size=self.train_data_obj.vocab_size,
-                                  word_vectors=self.train_data_obj.word_vectors)
+        model = RelationModel(config=self.config, vocab_size=self.train_data_obj.vocab_size,
+                              word_vectors=self.train_data_obj.word_vectors)
         return model
 
     def train(self):
@@ -121,5 +121,5 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_path", help="config path of model")
     args = parser.parse_args()
-    trainer = PrototypicalTrainer(args)
+    trainer = RelationTrainer(args)
     trainer.train()

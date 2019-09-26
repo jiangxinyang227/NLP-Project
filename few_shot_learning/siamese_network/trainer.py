@@ -34,7 +34,7 @@ class SiameseTrainer(object):
         :return:
         """
         data_obj = SiameseData(self.config["output_path"], sequence_length=self.config["sequence_length"],
-                               is_training=is_training)
+                               neg_samples=self.config["neg_samples"], is_training=is_training)
         return data_obj
 
     def create_model(self):

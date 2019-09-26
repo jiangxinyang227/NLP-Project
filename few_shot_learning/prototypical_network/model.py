@@ -35,7 +35,7 @@ class PrototypicalModel(object):
                                           name="embedding_w")
             else:
                 embedding_w = tf.get_variable("embedding_w", shape=[self.vocab_size, self.config["embedding_size"]],
-                                              initializer=tf.contrib.layers.xavier_initializer())
+                                              initializer=tf.random_normal_initializer())
 
             # support embedding. dimension: [num_classes, num_support, sequence_length, embedding_size]
             support_embedded = tf.nn.embedding_lookup(embedding_w, self.support, name="support_embedded")
@@ -76,16 +76,24 @@ class PrototypicalModel(object):
                     queries_embedded = tf.concat(queries_output, -1)
 
         with tf.name_scope("final_step_output"):
+            # # [num_classes * num_support, hidden_size * 2]
+            # support_final_output = self._attention(support_embedded_reshape, scope_name="support")
+            # # [num_classes * num_queries, hidden_size * 2]
+            # queries_final_output = self._attention(queries_embedded, scope_name="queries")
+
+            # [num_classes * num_support, hidden_size * 2]
+            support_final_output = support_embedded_reshape[:, -1, :]
+            # [num_classes * num_queries, hidden_size * 2]
+            queries_final_output = queries_embedded[:, -1, :]
+
             # [num_classes, num_support, embedding_size]
-            support_final_output = tf.reshape(support_embedded_reshape[:, -1, :],
+            support_final_output = tf.reshape(support_final_output,
                                               [self.config["num_classes"],
                                                self.config["num_support"],
                                                -1])
 
             # computing class vector means. dimension: [num_classes, embedding_size]
             support_class_output = tf.reduce_mean(support_final_output, axis=1)
-            # [num_classes * num_queries, embedding_size]
-            queries_final_output = queries_embedded[:, -1, :]
 
         # ---------------------------------------------------------------------------------------
         # squared Euclidean distance + cross entropy loss function
@@ -116,6 +124,36 @@ class PrototypicalModel(object):
             # gradient clip
             clip_gradients, _ = tf.clip_by_global_norm(gradients, self.config["max_grad_norm"])
             self.train_op = optimizer.apply_gradients(zip(clip_gradients, trainable_params))
+
+    def _attention(self, H, scope_name):
+        """
+        attention for the final output of Lstm
+        :param H: [batch_size, sequence_length, hidden_size * 2]
+        """
+        with tf.variable_scope(scope_name):
+            hidden_size = self.config["hidden_sizes"][-1] * 2
+            attention_size = self.config["attention_size"]
+            w_1 = tf.get_variable("w_1", shape=[hidden_size, attention_size],
+                                  initializer=tf.contrib.layers.xavier_initializer())
+
+            w_2 = tf.Variable(tf.random_normal([attention_size], stddev=0.1))
+
+            # Nonlinear conversion for LSTM output, [batch_size * sequence_length, attention_size]
+            M = tf.tanh(tf.matmul(tf.reshape(H, [-1, hidden_size]), w_1))
+
+            # calculate weights, [batch_size, sequence_length]
+            weights = tf.reshape(tf.matmul(M, tf.reshape(w_2, [-1, 1])),
+                                 [-1, self.config["sequence_length"]])
+
+            # softmax normalization, [batch_size, sequence_length]
+            alpha = tf.nn.softmax(weights, axis=-1)
+
+            # calculate weighted sum
+            # r = tf.matmul(tf.transpose(H, [0, 2, 1]), tf.reshape(alpha, [-1, self.config["sequence_length"], 1]))
+            # print(r)
+            output = tf.reduce_sum(H * tf.reshape(alpha, [-1, self.config["sequence_length"], 1]), axis=1)
+
+            return output
 
     def get_optimizer(self):
         """

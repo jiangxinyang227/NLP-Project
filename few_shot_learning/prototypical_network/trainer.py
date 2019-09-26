@@ -3,7 +3,6 @@ import os
 import argparse
 
 import tensorflow as tf
-import numpy as np
 from data_helper import PrototypicalData
 from model import PrototypicalModel
 from metrics import get_multi_metrics, mean
@@ -22,7 +21,7 @@ class PrototypicalTrainer(object):
         self.train_tasks = self.train_data_obj.gen_data(self.config["train_data"])
         self.eval_tasks = self.eval_data_obj.gen_data(self.config["eval_data"])
 
-        print("number of train tasks: ", len(self.train_tasks))
+        print("vocab size: ", self.train_data_obj.vocab_size)
 
         self.model = self.create_model()
 
@@ -34,6 +33,7 @@ class PrototypicalTrainer(object):
         data_obj = PrototypicalData(self.config["output_path"], sequence_length=self.config["sequence_length"],
                                     num_classes=self.config["num_classes"], num_support=self.config["num_support"],
                                     num_queries=self.config["num_queries"], num_tasks=self.config["num_tasks"],
+                                    num_eval_tasks=self.config["num_eval_tasks"],
                                     is_training=is_training)
         return data_obj
 
