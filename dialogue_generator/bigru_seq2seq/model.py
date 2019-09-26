@@ -15,12 +15,14 @@ class Seq2SeqGru(object):
         self.smooth_rate = config["smooth_rate"]  # smooth label的比例
         self.warmup_step = config["warmup_step"]  # 学习速率预热的步数
         self.decode_step = config["decode_step"]  # 解码的最大长度
+        self.max_grad_norm = config["max_grad_norm"]
 
         self.pad_token = 0
 
         # 编码和解码共享embedding矩阵，若是不同语言的，如机器翻译，就各定义一个embedding矩阵
         self.embedding_matrix = self._get_embedding_matrix()
         self.saver = self.init_saver()
+        self.optimizer = self.init_optimizer()
 
     def _get_embedding_matrix(self, zero_pad=True):
         """
@@ -84,7 +86,7 @@ class Seq2SeqGru(object):
         [batch_size, input_size]的tensor，input_mask是为了对padding部分做mask处理
         """
         for time, (embedded, mask) in enumerate(zip(tf.unstack(tf.transpose(inputs, [1, 0, 2])),
-                                                    tf.unstack(tf.transpose(input_mask, [1, 0, 2])))):
+                                                    tf.unstack(tf.transpose(input_mask, [1, 0])))):
             output, state = cell(embedded, state)
             output = tf.expand_dims(mask, 1) * output
             outputs.append(output)
@@ -112,13 +114,13 @@ class Seq2SeqGru(object):
         fw_state = initial_fw_state
         bw_state = initial_bw_state
         for fw_time, (fw_embedded, fw_mask) in enumerate(zip(tf.unstack(tf.transpose(fw_inputs, [1, 0, 2])),
-                                                             tf.unstack(tf.transpose(fw_input_mask, [1, 0, 2])))):
+                                                             tf.unstack(tf.transpose(fw_input_mask, [1, 0])))):
             fw_output, fw_state = cell(fw_embedded, fw_state)
             fw_output = tf.expand_dims(fw_mask, 1) * fw_output
             fw_outputs.append(fw_output)
 
         for bw_time, (bw_embedded, bw_mask) in enumerate(zip(tf.unstack(tf.transpose(bw_inputs, [1, 0, 2])),
-                                                             tf.unstack(tf.transpose(bw_input_mask, [1, 0, 2])))):
+                                                             tf.unstack(tf.transpose(bw_input_mask, [1, 0])))):
             bw_output, bw_state = cell(bw_embedded, bw_state)
             bw_output = tf.expand_dims(bw_mask, 1) * bw_output
             bw_outputs.append(bw_output)
@@ -152,19 +154,22 @@ class Seq2SeqGru(object):
             input_size = self.embedding_size
             for idx, hidden_size in enumerate(self.decoder_hidden_sizes):
                 with tf.name_scope("gru_{}".format(idx)):
-                    if encoder_final_state:
+                    if encoder_final_state is not None:
                         initial_state = encoder_final_state
                     else:
                         initial_state = tf.zeros([self.batch_size, hidden_size], dtype=tf.float32, name="initial_state")
                     embedded_word, state = self.decoder_layer(input_size, hidden_size, initial_state, encoder_outputs,
-                                                              encoder_mask, decoder_inputs, decoder_mask,
+                                                              encoder_mask, embedded_word, decoder_mask,
                                                               encoder_length, use_attention)
                 input_size = hidden_size
 
-        return embedded_word
+        weights = tf.transpose(self.embedding_matrix)  # (d_model, vocab_size)
+        logits = tf.einsum('ntd,dk->ntk', embedded_word, weights)  # (N, T2, vocab_size)
+
+        return logits
 
     def decoder_layer(self, input_size, hidden_size, initial_state, encoder_outputs, encoder_mask,
-                      decoder_inputs, decoder_mask, encoder_length=None, use_attention=True):
+                      decoder_inputs, decoder_mask, encoder_length, use_attention=True):
         """
         定义decoder层
         :param input_size: 输入大小
@@ -189,13 +194,12 @@ class Seq2SeqGru(object):
 
         # 因为encoder有部分是padding的，因此再取最后时间步的输出作为整个encoder的编码时，
         # 我们需要取非padding部分的最后时间步的输出
-        col = encoder_length - 1
+        col = tf.convert_to_tensor(encoder_length, dtype=tf.int32) - 1
         row = tf.range(self.batch_size)
         index = tf.unstack(tf.stack([row, col], axis=0), axis=1)
         encoder_final_output = tf.gather_nd(encoder_outputs, index)
-
         for time, (embedded, mask) in enumerate(zip(tf.unstack(tf.transpose(decoder_inputs, [1, 0, 2])),
-                                                    tf.unstack(tf.transpose(decoder_mask, [1, 0, 2])))):
+                                                    tf.unstack(tf.transpose(decoder_mask, [1, 0])))):
             if not use_attention:
                 c = encoder_final_output
             else:
@@ -218,9 +222,10 @@ class Seq2SeqGru(object):
         embedded = tf.expand_dims(embedded, -1)
         similarity = tf.matmul(encoder_outputs, embedded)
         weight = tf.nn.softmax(similarity, axis=-1)
-        weight *= encoder_mask
+        weight *= tf.expand_dims(encoder_mask, -1)
         # 注，在这里的weight必须放在前面，表示对encoder_outputs中做行相加，即沿着序列做加权和
-        c = tf.matmul(weight, encoder_outputs)
+        c = tf.squeeze(tf.matmul(tf.transpose(weight, [0, 2, 1]), encoder_outputs))
+
         return c
 
     def label_smoothing(self, inputs):
@@ -253,6 +258,10 @@ class Seq2SeqGru(object):
         saver = tf.train.Saver(tf.global_variables(), max_to_keep=100)
         return saver
 
+    def init_optimizer(self):
+        optimizer = tf.train.AdamOptimizer(self.learning_rate)
+        return optimizer
+
     def train(self, sess, batch):
         """
         对于训练阶段，需要执行self.train_op, self.loss, self.summary_op三个op，并传入相应的数据
@@ -268,24 +277,25 @@ class Seq2SeqGru(object):
                               encoder_mask=encoder_mask,
                               decoder_inputs=batch["decoder_inputs"],
                               decoder_length=batch["decoder_length"],
-                              decoder_max_len=batch["decoder_max_len"],
+                              decoder_max_len=max(batch["decoder_length"]),
                               encoder_final_state=final_state,
+                              encoder_length=batch["encoder_length"],
                               use_attention=True)
 
         predictions = tf.to_int32(tf.argmax(logits, axis=-1))
         # train scheme
         # 对真实的标签做平滑处理
         y_ = self.label_smoothing(tf.one_hot(batch["decoder_outputs"], depth=self.vocab_size))
+
         losses = tf.nn.softmax_cross_entropy_with_logits_v2(logits=logits, labels=y_)
         # 取出非0部分，即非padding部分
         non_padding = tf.to_float(tf.not_equal(batch["decoder_outputs"], self.pad_token))
         loss = tf.reduce_sum(losses * non_padding) / (tf.reduce_sum(non_padding) + 1e-7)
-
-        global_step = tf.train.get_or_create_global_step()
-        # 动态的修改初始的学习速率
-        lr = self.noam_scheme(self.learning_rate, global_step, self.warmup_step)
-        optimizer = tf.train.AdamOptimizer(lr)
-        train_op = optimizer.minimize(loss, global_step=global_step)
+        trainable_params = tf.trainable_variables()
+        gradients = tf.gradients(loss, trainable_params)
+        # 对梯度进行梯度截断
+        clip_gradients, _ = tf.clip_by_global_norm(gradients, self.max_grad_norm)
+        train_op = self.optimizer.apply_gradients(zip(clip_gradients, trainable_params))
 
         tf.summary.scalar("loss", loss)
         summary_op = tf.summary.merge_all()
@@ -311,6 +321,7 @@ class Seq2SeqGru(object):
                               decoder_length=batch["decoder_length"],
                               decoder_max_len=batch["decoder_max_len"],
                               encoder_final_state=final_state,
+                              encoder_length=batch["encoder_length"],
                               use_attention=True)
 
         predictions = tf.to_int32(tf.argmax(logits, axis=-1))
@@ -331,11 +342,8 @@ class Seq2SeqGru(object):
 
 
 class GRUCell(object):
-    """Gated Recurrent Unit cell, batch incorporated.
-
-    Based on [3].
-    GRU's output is equal to state.
-    The arg wt_attention is associated with arg context.
+    """
+    GRU神经单元实现
     """
 
     def __init__(self, input_size, hidden_size, use_attention=False, activation=tf.nn.tanh):
@@ -397,6 +405,7 @@ class GRUCell(object):
             if context is None:
                 raise ValueError("Attention mechanism used, while context vector is not received.")
             # 得到更新门
+
             r = tf.sigmoid(tf.matmul(tf.concat([inputs, state, context], axis=1),
                                      tf.concat([self._W_r_x, self._W_r_h, self._W_r_c], axis=0)) + self._B_r, name="r")
             # 得到重置门
@@ -408,7 +417,7 @@ class GRUCell(object):
                                                tf.concat([self._W_h_x, self._W_h_h], axis=0)) + self._B_h, name="h_hat")
         else:
             h_hat = self._activation(
-                tf.matmul(tf.concat(1, [inputs, r * state, context]),
-                          tf.concat(0, [self._W_h_x, self._W_h_h, self._W_h_c])) + self._B_h, name="h_hat")
+                tf.matmul(tf.concat([inputs, r * state, context], axis=1),
+                          tf.concat([self._W_h_x, self._W_h_h, self._W_h_c], axis=0)) + self._B_h, name="h_hat")
         h = z * state + (1 - z) * h_hat
         return h, h
