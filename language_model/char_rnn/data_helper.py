@@ -64,7 +64,6 @@ class TrainData(object):
         words = ["<UNK>"] + [item[0] for item in sort_word_count]
         vocab = words[: self.vocab_size]
         self.vocab_size = len(vocab)
-
         if self._word_vectors_path:
             word_vectors = self.get_word_vectors(vocab)
             self.word_vectors = word_vectors
@@ -80,7 +79,11 @@ class TrainData(object):
         return word_to_index
 
     def get_vocab(self):
-        with open(os.path.join(self._output_path, "word_to_index.pkl"), "wb") as f:
+        """
+        加载验证数据时，直接用已有的词表
+        :return:
+        """
+        with open(os.path.join(self._output_path, "word_to_index.pkl"), "rb") as f:
             word_to_index = pickle.load(f)
         return word_to_index
 

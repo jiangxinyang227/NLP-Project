@@ -23,7 +23,7 @@ class Trainer(object):
         self.train_data = self.data_obj.gen_data(self.config["train_data"])
         self.vocab_size = self.data_obj.vocab_size
         self.word_vectors = self.data_obj.word_vectors
-        self.eval_data = self.data_obj.gen_data(self.config["eval_data"])
+        self.eval_data = self.data_obj.gen_data(self.config["eval_data"], is_training=False)
 
         # 初始化模型对象
         self.model = self.create_model()
@@ -112,22 +112,6 @@ class Trainer(object):
                                 os.makedirs(save_path)
                             model_save_path = os.path.join(save_path, self.config["model_name"])
                             self.model.saver.save(sess, model_save_path, global_step=current_step)
-
-            # inputs = {"inputs": tf.saved_model.utils.build_tensor_info(self.model.inputs),
-            #           "keep_prob": tf.saved_model.utils.build_tensor_info(self.model.keep_prob)}
-            #
-            # outputs = {"predictions": tf.saved_model.utils.build_tensor_info(self.model.predictions),
-            #            "final_state": tf.saved_model.utils.build_tensor_info(self.model.final_state)}
-            #
-            # prediction_signature = tf.saved_model.signature_def_utils.build_signature_def(inputs=inputs,
-            #                                                                               outputs=outputs,
-            #                                                                               method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME)
-            # legacy_init_op = tf.group(tf.tables_initializer(), name="legacy_init_op")
-            # self.builder.add_meta_graph_and_variables(sess, [tf.saved_model.tag_constants.SERVING],
-            #                                           signature_def_map={"predict": prediction_signature},
-            #                                           legacy_init_op=legacy_init_op)
-            #
-            # self.builder.save()
 
 
 if __name__ == "__main__":

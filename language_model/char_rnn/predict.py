@@ -15,6 +15,7 @@ class Predictor(object):
 
         self.word_to_index, self.word_vectors = self.load_vocab()
         self.vocab_size = len(self.word_to_index)
+
         self.index_to_label = {value: key for key, value in self.word_to_index.items()}
 
         # 初始化模型
