@@ -1,1 +1,1 @@
-python train.py --config_path="config/textcnn_config.json"
+python train.py --config_path="config/bilstm_config.json"

@@ -34,7 +34,7 @@ class Trainer(TrainerBase):
 
         self.eval_inputs, self.eval_labels = self.eval_data_obj.gen_data()
         print("eval data size: {}".format(len(self.eval_labels)))
-
+        print("label numbers: ", len(self.label_list))
         # 初始化模型对象
         self.create_model()
 
