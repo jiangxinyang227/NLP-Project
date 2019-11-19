@@ -167,25 +167,38 @@ class InductionModel(object):
         layer_size = self.config["layer_size"]
 
         M = tf.get_variable("M", [encode_size, encode_size, layer_size], dtype=tf.float32,
-                            initializer=tf.glorot_normal_initializer())
+                            initializer=tf.truncated_normal_initializer(stddev=(2 / encode_size) ** 0.5))
+
+        # 该层可以理解为从不同的视角去计算类向量和query向量的分数
+        # [[class1, class2, ..], [class1, class2, ..], ... layer_size]
         all_mid = []
         for i in range(layer_size):
             # [num_classes, num_classes * num_queries]
             slice_mid = tf.matmul(tf.matmul(class_vector, M[:, :, i]), query_encoder, transpose_b=True)
-            all_mid.append(slice_mid)
+            all_mid.append(tf.split(slice_mid, [1] * num_classes, axis=0))
 
-        # [num_classes * layer_size, num_classes * num_queries]
-        all_mid_concat = tf.concat(all_mid, axis=0)
+        # [[1, 2, .. layer_size], ... class_n], 将同一个类经tensor layer计算出来的分数放在一起
+        all_mid = [[mid[j] for mid in all_mid] for j in range(len(all_mid[0]))]
 
-        # [num_classes * num_queries, num_classes * layer_size]
-        all_mid_transpose = tf.nn.relu(tf.transpose(all_mid_concat))
-        relation_w = tf.get_variable("relation_w", [num_classes * layer_size, num_classes], dtype=tf.float32,
+        # [layer_size, num_classes * num_queries]
+        all_mid_concat = [tf.concat(mid, axis=0) for mid in all_mid]
+
+        # [num_classes * num_queries, layer_size]
+        all_mid_transpose = [tf.nn.relu(tf.transpose(mid)) for mid in all_mid_concat]
+
+        relation_w = tf.get_variable("relation_w", [layer_size, 1], dtype=tf.float32,
                                      initializer=tf.glorot_normal_initializer())
-        relation_b = tf.get_variable("relation_b", [num_classes], dtype=tf.float32,
+        relation_b = tf.get_variable("relation_b", [1], dtype=tf.float32,
                                      initializer=tf.glorot_normal_initializer())
+
+        scores = []
+        for mid in all_mid_transpose:
+            score = tf.nn.sigmoid(tf.matmul(mid, relation_w) + relation_b)
+            scores.append(score)
 
         # [num_classes * num_queries, num_classes]
-        scores = tf.nn.sigmoid(tf.matmul(all_mid_transpose, relation_w) + relation_b)
+        scores = tf.concat(scores, axis=-1)
+
         return scores
 
     def _attention(self, H, scope_name):
@@ -197,7 +210,7 @@ class InductionModel(object):
             hidden_size = self.config["hidden_sizes"][-1] * 2
             attention_size = self.config["attention_size"]
             w_1 = tf.get_variable("w_1", shape=[hidden_size, attention_size],
-                                  initializer=tf.contrib.layers.xavier_initializer())
+                                  initializer=tf.glorot_normal_initializer)
 
             w_2 = tf.Variable(tf.random_normal([attention_size], stddev=0.1))
 
@@ -212,8 +225,6 @@ class InductionModel(object):
             alpha = tf.nn.softmax(weights, axis=-1)
 
             # calculate weighted sum
-            # r = tf.matmul(tf.transpose(H, [0, 2, 1]), tf.reshape(alpha, [-1, self.config["sequence_length"], 1]))
-            # print(r)
             output = tf.reduce_sum(H * tf.reshape(alpha, [-1, self.config["sequence_length"], 1]), axis=1)
 
             return output
@@ -283,6 +294,6 @@ class InductionModel(object):
                      self.queries: batch["queries"],
                      self.keep_prob: 1.0}
 
-        predict = sess.run(self.predictions, feed_dict=feed_dict)
+        predict = sess.run([self.predictions], feed_dict=feed_dict)
 
         return predict
