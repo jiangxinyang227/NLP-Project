@@ -28,3 +28,4 @@
  
 * You can only use 2-way, and if you need to use other way, you can modify the data_helper.py file.
 * Shot should not be more than 10, because there are few comments under some categories. 
+* The number of categories in prediction and training can not be equal.
