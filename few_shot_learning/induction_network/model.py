@@ -11,6 +11,8 @@ class InductionModel(object):
         self.vocab_size = vocab_size
         self.word_vectors = word_vectors
 
+        self.num_classes = self.config["num_classes"]
+
         # [num_classes, num_support, sequence_length]
         self.support = tf.placeholder(tf.int32, [None, None, None], name="support")
         # [num_classes * num_queries, sequence_length]
@@ -86,16 +88,17 @@ class InductionModel(object):
         with tf.name_scope("induction_module"):
 
             support_class = self.dynamic_routing(tf.reshape(support_final_output,
-                                                            [self.config["num_classes"],
+                                                            [self.num_classes,
                                                              self.config["num_support"],
                                                              -1]))
 
         with tf.name_scope("relation_module"):
             scores = self.neural_tensor_layer(support_class, queries_final_output)
+            self.scores = scores
             self.predictions = tf.argmax(scores, axis=-1, name="predictions")
 
         with tf.name_scope("loss"):
-            labels_one_hot = tf.one_hot(self.labels, self.config["num_classes"], dtype=tf.float32)
+            labels_one_hot = tf.one_hot(self.labels, self.num_classes, dtype=tf.float32)
             losses = tf.losses.mean_squared_error(labels=labels_one_hot, predictions=scores)
             l2_losses = tf.add_n(
                 [tf.nn.l2_loss(v)
@@ -120,12 +123,12 @@ class InductionModel(object):
         :return:
         """
 
-        num_classes = self.config["num_classes"]
+        num_classes = self.num_classes
         num_support = self.config["num_support"]
         encode_size = self.config["hidden_sizes"][-1] * 2
 
         # init dynamic routing values, weights of samples per class. [num_classes, num_support]
-        init_b = tf.Variable(tf.constant(0.0, dtype=tf.float32, shape=[num_classes, num_support]))
+        init_b = tf.constant(0.0, dtype=tf.float32, shape=[num_classes, num_support])
 
         # transformer matrix, mapping input to another space. [encode_size, encode_size]
         w_s = tf.get_variable("w_s", shape=[encode_size, encode_size], dtype=tf.float32,
@@ -162,7 +165,7 @@ class InductionModel(object):
         :param query_encoder: query set encoding matrix. [num_classes * num_queries, encode_size]
         :return:
         """
-        num_classes = self.config["num_classes"]
+        num_classes = self.num_classes
         encode_size = self.config["hidden_sizes"][-1] * 2
         layer_size = self.config["layer_size"]
 
@@ -294,6 +297,6 @@ class InductionModel(object):
                      self.queries: batch["queries"],
                      self.keep_prob: 1.0}
 
-        predict = sess.run([self.predictions], feed_dict=feed_dict)
+        predict, scores = sess.run([self.predictions, self.scores], feed_dict=feed_dict)
 
-        return predict
+        return predict, scores
