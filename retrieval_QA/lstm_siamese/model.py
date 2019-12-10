@@ -6,14 +6,17 @@ import tensorflow as tf
 
 
 class SiameseLstmModel(object):
-    def __init__(self, config, vocab_size, word_vectors):
+    def __init__(self, config, vocab_size, word_vectors, is_training=True):
         self.config = config
         self.vocab_size = vocab_size
         self.word_vectors = word_vectors
         self.batch_size = config["batch_size"]
 
+        if not is_training:
+            self.batch_size = 1
+
         self.query = tf.placeholder(tf.int32, [self.batch_size, None], name="query")
-        self.sim_query = tf.placeholder(tf.int32, [self.batch_size, None], name="sim_query")
+        self.sim = tf.placeholder(tf.int32, [self.batch_size, None], name="sim_query")
         self.label = tf.placeholder(tf.float32, [self.batch_size], name="label")
         self.query_length = tf.placeholder(tf.int32, [self.batch_size], name="query_length")
         self.sim_length = tf.placeholder(tf.int32, [self.batch_size], name="sim_length")
@@ -38,7 +41,7 @@ class SiameseLstmModel(object):
                                               initializer=tf.contrib.layers.xavier_initializer())
             # 利用词嵌入矩阵将输入的数据中的词转换成词向量，维度[batch_size, sequence_length, embedding_size]
             embedded_query = tf.nn.embedding_lookup(embedding_w, self.query)
-            embedded_sim_query = tf.nn.embedding_lookup(embedding_w, self.sim_query)
+            embedded_sim_query = tf.nn.embedding_lookup(embedding_w, self.sim)
 
             # 定义两层双向LSTM的模型结构
             with tf.name_scope("Bi-LSTM"):
@@ -79,40 +82,40 @@ class SiameseLstmModel(object):
         # -------------------------------------------------------------------------------------------
         # 余弦相似度 + 对比损失
         # -------------------------------------------------------------------------------------------
-        with tf.name_scope("cosine_similarity"):
-            # [batch_size]
-            query_norm = tf.sqrt(tf.reduce_sum(tf.square(query_final_output), axis=-1))
-            # [batch_size]
-            sim_query_norm = tf.sqrt(tf.reduce_sum(tf.square(sim_query_final_output), axis=-1))
-            # [batch_size]
-            dot = tf.reduce_sum(tf.multiply(query_final_output, sim_query_final_output), axis=-1)
-            # [batch_size]
-            norm = query_norm * sim_query_norm
-            # [batch_size]
-            self.similarity = tf.div(dot, norm, name="similarity")
-            self.predictions = tf.cast(tf.greater_equal(self.similarity, self.config["neg_threshold"]), tf.int32,
-                                       name="predictions")
-
-        with tf.name_scope("loss"):
-            # 预测为正例的概率
-            pred_pos_prob = tf.square((1 - self.similarity))
-            cond = (self.similarity > self.config["neg_threshold"])
-            zeros = tf.zeros_like(self.similarity, dtype=tf.float32)
-            pred_neg_prob = tf.where(cond, tf.square(self.similarity), zeros)
-            losses = self.label * pred_pos_prob + (1 - self.label) * pred_neg_prob
-            self.loss = tf.reduce_mean(losses, name="loss")
+        # with tf.name_scope("cosine_similarity"):
+        #     # [batch_size]
+        #     query_norm = tf.sqrt(tf.reduce_sum(tf.square(query_final_output), axis=-1))
+        #     # [batch_size]
+        #     sim_query_norm = tf.sqrt(tf.reduce_sum(tf.square(sim_query_final_output), axis=-1))
+        #     # [batch_size]
+        #     dot = tf.reduce_sum(tf.multiply(query_final_output, sim_query_final_output), axis=-1)
+        #     # [batch_size]
+        #     norm = query_norm * sim_query_norm
+        #     # [batch_size]
+        #     self.similarity = tf.div(dot, norm, name="similarity")
+        #     self.predictions = tf.cast(tf.greater_equal(self.similarity, 0.5), tf.int32,
+        #                                name="predictions")
+        #
+        # with tf.name_scope("loss"):
+        #     # 预测为正例的概率
+        #     pred_pos_prob = tf.square((1 - self.similarity))
+        #     cond = (self.similarity > self.config["neg_threshold"])
+        #     zeros = tf.zeros_like(self.similarity, dtype=tf.float32)
+        #     pred_neg_prob = tf.where(cond, tf.square(self.similarity), zeros)
+        #     losses = self.label * pred_pos_prob + (1 - self.label) * pred_neg_prob
+        #     self.loss = tf.reduce_mean(losses, name="loss")
 
         # --------------------------------------------------------------------------------------------
         # 曼哈顿距离 + 二元交叉熵
         # --------------------------------------------------------------------------------------------
-        # with tf.name_scope("manhattan_distance"):
-        #     man_distance = tf.reduce_sum(tf.abs(query_final_output - sim_query_final_output), -1)
-        #     self.similarity = tf.exp(-man_distance)
-        #     self.predictions = tf.cast(tf.greater_equal(self.similarity, 0.5), tf.int32, name="predictions")
-        #
-        # with tf.name_scope("loss"):
-        #     losses = self.label * tf.log(self.similarity) + (1 - self.label) * tf.log(1 - self.similarity)
-        #     self.loss = tf.reduce_mean(-losses, name="loss")
+        with tf.name_scope("manhattan_distance"):
+            man_distance = tf.reduce_sum(tf.abs(query_final_output - sim_query_final_output), -1)
+            self.similarity = tf.exp(-man_distance)
+            self.predictions = tf.cast(tf.greater_equal(self.similarity, 0.65), tf.int32, name="predictions")
+
+        with tf.name_scope("loss"):
+            losses = self.label * tf.log(self.similarity) + (1 - self.label) * tf.log(1 - self.similarity)
+            self.loss = tf.reduce_mean(-losses, name="loss")
 
         with tf.name_scope("train_op"):
             # 定义优化器
@@ -172,7 +175,7 @@ class SiameseLstmModel(object):
         :return: 损失和预测结果
         """
         feed_dict = {self.query: batch["query"],
-                     self.sim_query: batch["sim"],
+                     self.sim: batch["sim"],
                      self.query_length: batch["query_length"],
                      self.sim_length: batch["sim_length"],
                      self.label: batch["label"],
@@ -191,7 +194,7 @@ class SiameseLstmModel(object):
         :return: 损失和预测结果
         """
         feed_dict = {self.query: batch["query"],
-                     self.sim_query: batch["sim"],
+                     self.sim: batch["sim"],
                      self.query_length: batch["query_length"],
                      self.sim_length: batch["sim_length"],
                      self.label: batch["label"],
@@ -208,7 +211,7 @@ class SiameseLstmModel(object):
         :return: 预测结果
         """
         feed_dict = {self.query: batch["query"],
-                     self.sim_query: batch["sim"],
+                     self.sim: batch["sim"],
                      self.query_length: batch["query_length"],
                      self.sim_length: batch["sim_length"],
                      self.keep_prob: 1.0}

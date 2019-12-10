@@ -98,3 +98,83 @@ def binary_f_beta(pred_y, true_y, beta=1.0, positive=1):
     except:
         f_b = 0
     return f_b
+
+
+def multi_precision(pred_y, true_y, labels):
+    """
+    多类的精确率
+    :param pred_y: 预测结果
+    :param true_y: 真实结果
+    :param labels: 标签列表
+    :return:
+    """
+    if isinstance(pred_y[0], list):
+        pred_y = [item[0] for item in pred_y]
+
+    precisions = [binary_precision(pred_y, true_y, label) for label in labels]
+    prec = mean(precisions)
+    return prec
+
+
+def multi_recall(pred_y, true_y, labels):
+    """
+    多类的召回率
+    :param pred_y: 预测结果
+    :param true_y: 真实结果
+    :param labels: 标签列表
+    :return:
+    """
+    if isinstance(pred_y[0], list):
+        pred_y = [item[0] for item in pred_y]
+
+    recalls = [binary_recall(pred_y, true_y, label) for label in labels]
+    rec = mean(recalls)
+    return rec
+
+
+def multi_f_beta(pred_y, true_y, labels, beta=1.0):
+    """
+    多类的f beta值
+    :param pred_y: 预测结果
+    :param true_y: 真实结果
+    :param labels: 标签列表
+    :param beta: beta值
+    :return:
+    """
+    if isinstance(pred_y[0], list):
+        pred_y = [item[0] for item in pred_y]
+
+    f_betas = [binary_f_beta(pred_y, true_y, beta, label) for label in labels]
+    f_beta = mean(f_betas)
+    return f_beta
+
+
+def get_binary_metrics(pred_y, true_y, f_beta=1.0):
+    """
+    得到二分类的性能指标
+    :param pred_y:
+    :param true_y:
+    :param f_beta:
+    :return:
+    """
+    acc = accuracy(pred_y, true_y)
+    recall = binary_recall(pred_y, true_y)
+    precision = binary_precision(pred_y, true_y)
+    f_beta = binary_f_beta(pred_y, true_y, f_beta)
+    return acc, recall, precision, f_beta
+
+
+def get_multi_metrics(pred_y, true_y, labels, f_beta=1.0):
+    """
+    得到多分类的性能指标
+    :param pred_y:
+    :param true_y:
+    :param labels:
+    :param f_beta:
+    :return:
+    """
+    acc = accuracy(pred_y, true_y)
+    recall = multi_recall(pred_y, true_y, labels)
+    precision = multi_precision(pred_y, true_y, labels)
+    f_beta = multi_f_beta(pred_y, true_y, labels, f_beta)
+    return acc, recall, precision, f_beta
