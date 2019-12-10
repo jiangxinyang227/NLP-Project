@@ -22,6 +22,7 @@ class LstmDssmData(object):
         self.__embedding_size = config["embedding_size"]
         self.__word_vector_path = config["word_vector_path"]
         self.__low_freq = config["low_freq"]
+        self.__split_word = config["split_word"]
 
         self.vocab_size = None
         self.word_vectors = None
