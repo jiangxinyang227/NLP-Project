@@ -16,8 +16,8 @@ class DnnDssmModel(object):
             self.batch_size = batch_size
             self.samples = samples
 
-        self.query = tf.placeholder(tf.int32, [self.batch_size, None], name="query")
-        self.sim_query = tf.placeholder(tf.int32, [self.batch_size * self.samples, None], name="sim_query")
+        self.query = tf.placeholder(tf.float32, [self.batch_size, None], name="query")
+        self.sim_query = tf.placeholder(tf.float32, [self.batch_size * self.samples, None], name="sim_query")
 
         self.keep_prob = tf.placeholder(tf.float32, name="keep_prob")  # dropout
 
@@ -140,8 +140,6 @@ class DnnDssmModel(object):
         """
         feed_dict = {self.query: batch["query"],
                      self.sim_query: batch["sim"],
-                     self.query_length: batch["query_length"],
-                     self.sim_length: batch["sim_length"],
                      self.keep_prob: dropout_prob}
 
         # 训练模型
@@ -158,8 +156,6 @@ class DnnDssmModel(object):
         """
         feed_dict = {self.query: batch["query"],
                      self.sim_query: batch["sim"],
-                     self.query_length: batch["query_length"],
-                     self.sim_length: batch["sim_length"],
                      self.keep_prob: 1.0}
 
         loss, predictions = sess.run([self.loss, self.predictions], feed_dict=feed_dict)
@@ -174,8 +170,6 @@ class DnnDssmModel(object):
         """
         feed_dict = {self.query: batch["query"],
                      self.sim_query: batch["sim"],
-                     self.query_length: batch["query_length"],
-                     self.sim_length: batch["sim_length"],
                      self.keep_prob: 1.0}
 
         predict = sess.run(self.predictions, feed_dict=feed_dict)

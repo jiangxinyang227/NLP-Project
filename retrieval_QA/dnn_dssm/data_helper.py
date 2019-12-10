@@ -1,11 +1,9 @@
 import os
-import json
 import copy
 import random
 from collections import Counter
 from itertools import chain
 
-import jieba
 from gensim import corpora, models
 
 
@@ -20,8 +18,6 @@ class DnnDssmData(object):
         self.__stop_word_path = config["stop_word_path"]
         self.__low_freq = config["low_freq"]
 
-        self.vocab_size = None
-        self.word_vectors = None
         self.count = 0
 
         self.dictionary, self.tf_idf_model = None, None
@@ -83,6 +79,13 @@ class DnnDssmData(object):
 
     @staticmethod
     def trans_to_tf_idf(inputs, dictionary, tf_idf_model):
+        """
+        将样本转换成tfidf 向量表示
+        :param inputs:
+        :param dictionary:
+        :param tf_idf_model:
+        :return:
+        """
         vocab_size = len(dictionary.token2id)
         input_ids = []
         for questions in inputs:
@@ -97,12 +100,18 @@ class DnnDssmData(object):
             input_ids.append(question_ids)
         return input_ids
 
-    @staticmethod
-    def train_tf_idf(inputs):
+    def train_tf_idf(self, inputs):
+        """
+        训练tfidf model
+        :param inputs:
+        :return:
+        """
         sentences = list(chain(*inputs))
         dictionary = corpora.Dictionary(sentences)
+        dictionary.save_as_text(os.path.join(self.__output_path, "dict.txt"))
         corpus = [dictionary.doc2bow(sentence) for sentence in sentences]
         tfidf_model = models.TfidfModel(corpus)
+        tfidf_model.save(os.path.join(self.__output_path, "tfidf.model"))
         return dictionary, tfidf_model
 
     def gen_data(self, file_path):
