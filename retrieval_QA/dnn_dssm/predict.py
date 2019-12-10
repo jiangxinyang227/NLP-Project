@@ -1,14 +1,10 @@
-import json
-import os
-
 import jieba
-import numpy as np
 import tensorflow as tf
 from model import DnnDssmModel
 
 
-class TextCnnPredictor(object):
-    def __init__(self, config, init_size, batch_size, samples):
+class Predictor(object):
+    def __init__(self, config, init_size, samples, batch_size=1):
 
         self.config = config
         self.init_size = init_size
