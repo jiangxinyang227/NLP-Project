@@ -15,10 +15,11 @@
 * predictors：存放预测代码
 
 #### 训练模型
-* python train.py --config_path="config/char_rnn_config.json"
+* python train.py --config_path="config.json"
 
 #### 预测模型
-* 预测代码都在predictors/predict.py中，初始化Predictor对象，调用predict方法即可。
+* 预测代码都在predict.py中，初始化Predictor对象，调用predict方法即可。
+* 执行python test.py文件可以生成诗词
 
 #### 模型的配置参数详述
 

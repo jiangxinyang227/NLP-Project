@@ -1,5 +1,5 @@
 import os
-import pickle
+import json
 import copy
 from collections import Counter
 import gensim
@@ -73,8 +73,8 @@ class TrainData(object):
         word_to_index = dict(zip(vocab, list(range(len(vocab)))))
 
         # 将词汇-索引映射表保存为pkl数据，之后做inference时直接加载来处理数据
-        with open(os.path.join(self._output_path, "word_to_index.pkl"), "wb") as f:
-            pickle.dump(word_to_index, f)
+        with open(os.path.join(self._output_path, "word_to_index.json"), "w", encoding="utf8") as f:
+            json.dump(word_to_index, f, ensure_ascii=False)
 
         return word_to_index
 
@@ -83,8 +83,8 @@ class TrainData(object):
         加载验证数据时，直接用已有的词表
         :return:
         """
-        with open(os.path.join(self._output_path, "word_to_index.pkl"), "rb") as f:
-            word_to_index = pickle.load(f)
+        with open(os.path.join(self._output_path, "word_to_index.json"), "r", encoding="utf8") as f:
+            word_to_index = json.load(f)
         return word_to_index
 
     @staticmethod

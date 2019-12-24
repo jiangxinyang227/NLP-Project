@@ -1,5 +1,5 @@
 import os
-import pickle
+import json
 
 import numpy as np
 import tensorflow as tf
@@ -27,8 +27,8 @@ class Predictor(object):
 
     def load_vocab(self):
         # 将词汇-索引映射表加载出来
-        with open(os.path.join(self.output_path, "word_to_index.pkl"), "rb") as f:
-            word_to_index = pickle.load(f)
+        with open(os.path.join(self.output_path, "word_to_index.json"), "r", encoding="utf8") as f:
+            word_to_index = json.load(f)
 
         if os.path.exists(os.path.join(self.output_path, "word_vectors.npy")):
             word_vectors = np.load(os.path.join(self.output_path, "word_vectors.npy"))
@@ -56,7 +56,7 @@ class Predictor(object):
         """
 
         model = CharRNNModel(config=self.config, vocab_size=self.vocab_size,
-                             word_vectors=self.word_vectors, is_training=False)
+                             word_vectors=self.word_vectors)
         return model
 
     def load_graph(self):
@@ -99,7 +99,7 @@ class Predictor(object):
          给定一条句子，预测结果
         :return:
         """
-        state = self.sess.run(self.model.initial_state)
+        state = np.zeros([2 * self.config["num_layers"], self.config["hidden_size"]])
         samples = []
         start_ids = self.word_to_encode(start)
         start_id = None

@@ -2,8 +2,11 @@ import json
 import os
 import argparse
 import math
+import shutil
 
 import tensorflow as tf
+import numpy as np
+
 from data_helper import TrainData
 from models import CharRNNModel
 from metrics import mean
@@ -14,9 +17,6 @@ class Trainer(object):
         self.args = args
         with open(args.config_path, "r") as fr:
             self.config = json.load(fr)
-
-        # self.builder = tf.saved_model.builder.SavedModelBuilder(os.path.join(
-        #     os.path.abspath(os.path.dirname(os.getcwd())), self.config["pb_model_path"]))
 
         # 加载数据集
         self.data_obj = self.load_data()
@@ -53,7 +53,7 @@ class Trainer(object):
         训练模型
         :return:
         """
-        with tf.Session() as sess:
+        with tf.device("cpu:0"), tf.Session() as sess:
             # 初始化变量值
             sess.run(tf.global_variables_initializer())
             current_step = 0
@@ -69,7 +69,7 @@ class Trainer(object):
                 os.makedirs(eval_summary_path)
             eval_summary_writer = tf.summary.FileWriter(eval_summary_path, sess.graph)
 
-            state = sess.run(self.model.initial_state)
+            state = np.zeros([self.config["batch_size"] * 2 * self.config["num_layers"], self.config["hidden_size"]])
             for epoch in range(self.config["epochs"]):
                 print("----- Epoch {}/{} -----".format(epoch + 1, self.config["epochs"]))
 
@@ -85,7 +85,7 @@ class Trainer(object):
                                                                              perplexity))
 
                     current_step += 1
-                    if current_step % self.config["checkpoint_every"] == 0:
+                    if current_step % self.config["eval_every"] == 0:
 
                         eval_losses = []
                         eval_perplexities = []
@@ -106,12 +106,37 @@ class Trainer(object):
                                                                                 mean(eval_perplexities)))
                         print("\n")
 
-                        if self.config["ckpt_model_path"]:
-                            save_path = self.config["ckpt_model_path"]
-                            if not os.path.exists(save_path):
-                                os.makedirs(save_path)
-                            model_save_path = os.path.join(save_path, self.config["model_name"])
-                            self.model.saver.save(sess, model_save_path, global_step=current_step)
+            if self.config["ckpt_model_path"]:
+                save_path = self.config["ckpt_model_path"]
+                if not os.path.exists(save_path):
+                    os.makedirs(save_path)
+                model_save_path = os.path.join(save_path, self.config["model_name"])
+                self.model.saver.save(sess, model_save_path, global_step=current_step)
+
+            # 保存为pb文件
+            saved_model_path = self.config["pb_model_path"]
+
+            if os.path.exists(saved_model_path):
+                shutil.rmtree(saved_model_path)
+
+            builder = tf.saved_model.builder.SavedModelBuilder(saved_model_path)
+
+            inputs = {"inputs": tf.saved_model.utils.build_tensor_info(self.model.inputs),
+                      "initial_state": tf.saved_model.utils.build_tensor_info(self.model.initial_state),
+                      "keep_prob": tf.saved_model.utils.build_tensor_info(self.model.keep_prob)}
+
+            outputs = {"predictions": tf.saved_model.utils.build_tensor_info(self.model.predictions),
+                       "final_state": tf.saved_model.utils.build_tensor_info(self.model.final_state)}
+
+            prediction_signature = tf.saved_model.signature_def_utils.build_signature_def(inputs=inputs,
+                                                                                          outputs=outputs,
+                                                                                          method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME)
+            legacy_init_op = tf.group(tf.tables_initializer(), name="legacy_init_op")
+            builder.add_meta_graph_and_variables(sess, [tf.saved_model.tag_constants.SERVING],
+                                                 signature_def_map={"language_model": prediction_signature},
+                                                 legacy_init_op=legacy_init_op)
+
+            builder.save()
 
 
 if __name__ == "__main__":

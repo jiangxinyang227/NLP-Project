@@ -1,9 +1,10 @@
 import tensorflow as tf
+import numpy as np
 
 
 class CharRNNModel(object):
 
-    def __init__(self, config, vocab_size=None, word_vectors=None, is_training=True):
+    def __init__(self, config, vocab_size=None, word_vectors=None):
         """
         文本分类的基类，提供了各种属性和训练，验证，测试的方法
         :param config: 模型的配置参数
@@ -16,20 +17,17 @@ class CharRNNModel(object):
         self.inputs = tf.placeholder(tf.int32, [None, None], name="inputs")  # 数据输入
         self.labels = tf.placeholder(tf.int32, [None, None], name="labels")  # 标签
         self.keep_prob = tf.placeholder(tf.float32, name="keep_prob")  # dropout
-
-        self.batch_size = config["batch_size"]
-        self.sequence_length = config["sequence_length"]
-
-        if is_training is False:
-            self.batch_size, self.sequence_length = 1, 1
-
-        self.initial_state = None
-        self.final_state = None
+        self.initial_state = tf.placeholder(tf.float32, [None, None], name="initial_state")
 
         self.build_model()
         self.init_saver()
 
     def build_model(self):
+
+        split_init_state = tf.split(self.initial_state, num_or_size_splits=4, axis=0)
+        initial_state = (tf.nn.rnn_cell.LSTMStateTuple(h=split_init_state[0], c=split_init_state[1]),
+                         tf.nn.rnn_cell.LSTMStateTuple(h=split_init_state[2], c=split_init_state[3]))
+
         # 词嵌入层
         with tf.name_scope("embedding"):
             # 利用预训练的词向量初始化词嵌入矩阵
@@ -51,14 +49,19 @@ class CharRNNModel(object):
             cell = tf.nn.rnn_cell.MultiRNNCell(
                 [get_a_cell(self.config["hidden_size"], self.keep_prob) for _ in range(self.config["num_layers"])]
             )
-            self.initial_state = cell.zero_state(self.batch_size, tf.float32)
 
             # 通过dynamic_rnn对cell展开时间维度
-            outputs, self.final_state = tf.nn.dynamic_rnn(cell, embedded_words, initial_state=self.initial_state)
+            outputs, final_state = tf.nn.dynamic_rnn(cell, embedded_words, initial_state=initial_state)
 
             # 通过lstm_outputs得到概率
             seq_output = tf.concat(outputs, 1)
             x = tf.reshape(seq_output, [-1, self.config["hidden_size"]])
+            self.final_state = tf.concat([final_state[0].h,
+                                          final_state[0].c,
+                                          final_state[1].h,
+                                          final_state[1].c],
+                                         axis=0,
+                                         name="final_state")
 
         with tf.name_scope("output"):
             output_w = tf.get_variable(
@@ -147,7 +150,8 @@ class CharRNNModel(object):
                      self.keep_prob: dropout_prob}
 
         # 训练模型
-        _, summary_op, loss, final_state = sess.run([self.train_op, self.summary_op, self.loss, self.final_state], feed_dict=feed_dict)
+        _, summary_op, loss, final_state = sess.run([self.train_op, self.summary_op, self.loss, self.final_state],
+                                                    feed_dict=feed_dict)
         return summary_op, loss, final_state
 
     def eval(self, sess, batch, state):
@@ -181,6 +185,3 @@ class CharRNNModel(object):
         predict, state = sess.run([self.predictions, self.final_state], feed_dict=feed_dict)
 
         return predict, state
-
-
-
